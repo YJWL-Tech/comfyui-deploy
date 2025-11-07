@@ -1,6 +1,7 @@
 import { setInitialUserData } from "../../../lib/setInitialUserData";
 import { getAllUserWorkflow } from "../../../server/crudWorkflow";
 import { WorkflowList } from "@/components/WorkflowList";
+import { UploadWorkflow } from "@/components/UploadWorkflow";
 import { db } from "@/db/db";
 import { usersTable } from "@/db/schema";
 import { auth } from "@clerk/nextjs";
@@ -31,5 +32,10 @@ async function WorkflowServer() {
     return <div>No workflow found</div>;
   }
 
-  return <WorkflowList data={workflow} />;
+  return (
+    <div className="flex flex-col h-full">
+      <UploadWorkflow />
+      <WorkflowList data={workflow} />
+    </div>
+  );
 }

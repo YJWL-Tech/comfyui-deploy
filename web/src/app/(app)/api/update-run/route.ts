@@ -21,22 +21,24 @@ export async function POST(request: Request) {
 
   // console.log(run_id, status, output_data);
 
+  // Handle output_data and status independently - they can both be present
   if (output_data) {
-    const workflow_run_output = await db.insert(workflowRunOutputs).values({
+    await db.insert(workflowRunOutputs).values({
       run_id: run_id,
       data: output_data,
     });
-  } else if (status) {
+  }
+  
+  if (status) {
     // console.log("status", status);
-    const workflow_run = await db
+    await db
       .update(workflowRunsTable)
       .set({
         status: status,
         ended_at:
           status === "success" || status === "failed" ? new Date() : null,
       })
-      .where(eq(workflowRunsTable.id, run_id))
-      .returning();
+      .where(eq(workflowRunsTable.id, run_id));
   }
 
   // const workflow_version = await db.query.workflowVersionTable.findFirst({

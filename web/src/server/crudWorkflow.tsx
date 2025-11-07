@@ -79,3 +79,28 @@ export async function getWorkflowVersion(
     where: eq(workflowVersionTable.id, version_id),
   });
 }
+
+export async function getWorkflowVersions(
+  workflow_id: string,
+  limit: number = 20,
+  offset: number = 0,
+) {
+  // Get workflow versions with pagination (no permission check)
+  return db.query.workflowVersionTable.findMany({
+    where: eq(workflowVersionTable.workflow_id, workflow_id),
+    orderBy: desc(workflowVersionTable.version),
+    limit: limit,
+    offset: offset,
+    columns: {
+      id: true,
+      workflow_id: true,
+      version: true,
+      created_at: true,
+      updated_at: true,
+      // Exclude large fields for list view
+      workflow: false,
+      workflow_api: false,
+      snapshot: false,
+    },
+  });
+}

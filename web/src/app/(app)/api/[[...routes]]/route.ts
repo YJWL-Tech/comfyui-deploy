@@ -7,6 +7,7 @@ import type { Context, Next } from "hono";
 import { handle } from "hono/vercel";
 import { app } from "../../../../routes/app";
 import { registerWorkflowUploadRoute } from "@/routes/registerWorkflowUploadRoute";
+import { registerWorkflowVersionRoute } from "@/routes/registerWorkflowVersionRoute";
 import { registerGetAuthResponse } from "@/routes/registerGetAuthResponse";
 import { registerGetWorkflowRoute } from "@/routes/registerGetWorkflow";
 import { cors } from "hono/cors";
@@ -71,6 +72,7 @@ registerUploadRoute(app);
 registerGetAuthResponse(app);
 
 registerWorkflowUploadRoute(app);
+registerWorkflowVersionRoute(app);
 registerGetWorkflowRoute(app);
 
 // The OpenAPI documentation will be available at /doc

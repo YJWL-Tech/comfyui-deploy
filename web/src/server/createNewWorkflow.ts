@@ -2,6 +2,7 @@ import { db } from "@/db/db";
 import type { WorkflowVersionType } from "@/db/schema";
 import { workflowTable, workflowVersionTable } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
+import { auth } from "@clerk/nextjs";
 
 export async function createNewWorkflowVersion({
   workflow_id,
@@ -83,4 +84,36 @@ export async function createNewWorkflow({
     workflow_id,
     version,
   };
+}
+
+// Helper for web app: create a workflow using current authenticated user
+export async function createWorkflowFromUpload({
+  workflow_name,
+  workflow,
+  workflow_api,
+  snapshot,
+}: {
+  workflow_name: string;
+  workflow: WorkflowVersionType["workflow"];
+  workflow_api: WorkflowVersionType["workflow_api"];
+  snapshot: WorkflowVersionType["snapshot"] | null;
+}) {
+  const { userId, orgId } = await auth();
+
+  if (!userId) {
+    throw new Error("No auth");
+  }
+
+  const result = await createNewWorkflow({
+    workflow_name,
+    user_id: userId,
+    org_id: orgId ?? undefined,
+    workflowData: {
+      workflow,
+      workflow_api,
+      snapshot: snapshot as any,
+    },
+  });
+
+  return result;
 }
