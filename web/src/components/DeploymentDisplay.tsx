@@ -1,4 +1,5 @@
 import { CodeBlock } from "@/components/CodeBlock";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -97,10 +98,10 @@ export function DeploymentDisplay({
 
   return (
     <Dialog>
-      <DialogTrigger asChild className="appearance-none hover:cursor-pointer">
-        <TableRow>
-          <DeploymentRow deployment={deployment} />
-        </TableRow>
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="sm">
+          View Code
+        </Button>
       </DialogTrigger>
       <DialogContent className="max-w-3xl">
         <DialogHeader>

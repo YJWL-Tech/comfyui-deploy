@@ -3,12 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "dev:all": "concurrently \"bun run db-up\" \"bun run migrate-local\" \"next dev\"",
+    "dev": "next dev -H 0.0.0.0",
+    "dev:all": "concurrently \"bun run db-up\" \"bun run migrate-local\" \"next dev -H 0.0.0.0\"",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "generate": "bunx drizzle-kit generate:pg",
+    "worker": "tsx src/worker/queue-worker.ts",
+    "worker:dev": "tsx watch src/worker/queue-worker.ts",
     "migrate-production": "bun run migrate.mts",
     "migrate-local": "SSL=false LOCAL=true bun run migrate.mts",
     "db-up": "docker-compose up",
@@ -104,7 +106,9 @@
     "usehooks-ts": "^2.9.4",
     "uuid": "^9.0.1",
     "zod": "^3.22.4",
-    "zustand": "^4.4.7"
+    "zustand": "^4.4.7",
+    "bullmq": "^5.0.0",
+    "ioredis": "^5.3.2"
   },
   "devDependencies": {
     "@biomejs/biome": "1.5.2",
@@ -119,6 +123,8 @@
     "postcss": "^8",
     "postgres": "^3.4.3",
     "sharp": "^0.33.1",
+    "@types/ioredis": "^5.0.0",
+    "tsx": "^4.7.0",
     "tailwindcss": "^3.3.0",
     "typescript": "^5"
   }

@@ -25,6 +25,7 @@ export const createRun = withServerPromise(
     inputs,
     runOrigin,
     apiUser,
+    queueJobId,
   }: {
     origin: string;
     workflow_version_id: string | WorkflowVersionType;
@@ -32,15 +33,16 @@ export const createRun = withServerPromise(
     inputs?: Record<string, string | number>;
     runOrigin?: WorkflowRunOriginType;
     apiUser?: APIKeyUserType;
+    queueJobId?: string; // 队列任务的 job_id
   }) => {
     const machine =
       typeof machine_id === "string"
         ? await db.query.machinesTable.findFirst({
-            where: and(
-              eq(machinesTable.id, machine_id),
-              eq(machinesTable.disabled, false),
-            ),
-          })
+          where: and(
+            eq(machinesTable.id, machine_id),
+            eq(machinesTable.disabled, false),
+          ),
+        })
         : machine_id;
 
     if (!machine) {
@@ -50,16 +52,16 @@ export const createRun = withServerPromise(
     const workflow_version_data =
       typeof workflow_version_id === "string"
         ? await db.query.workflowVersionTable.findFirst({
-            where: eq(workflowRunsTable.id, workflow_version_id),
-            with: {
-              workflow: {
-                columns: {
-                  org_id: true,
-                  user_id: true,
-                },
+          where: eq(workflowRunsTable.id, workflow_version_id),
+          with: {
+            workflow: {
+              columns: {
+                org_id: true,
+                user_id: true,
               },
             },
-          })
+          },
+        })
         : workflow_version_id;
 
     if (!workflow_version_data) {
@@ -119,6 +121,7 @@ export const createRun = withServerPromise(
         workflow_inputs: inputs,
         machine_id: machine.id,
         origin: runOrigin,
+        queue_job_id: queueJobId,
       })
       .returning();
 
@@ -146,8 +149,7 @@ export const createRun = withServerPromise(
           console.log(___result);
           if (!___result.ok)
             throw new Error(
-              `Error creating run, ${
-                ___result.statusText
+              `Error creating run, ${___result.statusText
               } ${await ___result.text()}`,
             );
           console.log(_data, ___result);
@@ -180,8 +182,7 @@ export const createRun = withServerPromise(
           console.log(__result);
           if (!__result.ok)
             throw new Error(
-              `Error creating run, ${
-                __result.statusText
+              `Error creating run, ${__result.statusText
               } ${await __result.text()}`,
             );
           console.log(data, __result);
@@ -207,7 +208,7 @@ export const createRun = withServerPromise(
                 await _result.json(),
               );
               message += ` ${result.node_errors}`;
-            } catch (error) {}
+            } catch (error) { }
             throw new Error(message);
           }
           // prompt_id = result.prompt_id;

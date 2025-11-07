@@ -2,6 +2,7 @@ import {
   Table,
   TableBody,
   TableCaption,
+  TableCell,
   TableHead,
   TableHeader,
   TableRow,
@@ -13,8 +14,10 @@ import {
 	findAllRunsWithCounts,
 } from "../server/findAllRuns";
 import { DeploymentDisplay } from "./DeploymentDisplay";
+import { EditDeploymentDialog } from "./EditDeploymentDialog";
 import { PaginationControl } from "./PaginationControl";
 import { RunDisplay } from "./RunDisplay";
+import { getRelativeTime } from "@/lib/getRelativeTime";
 
 const itemPerPage = 6;
 const pageParser = parseAsInteger.withDefault(1);
@@ -71,6 +74,10 @@ export async function RunsTable(props: {
 
 export async function DeploymentsTable(props: { workflow_id: string }) {
   const allRuns = await findAllDeployments(props.workflow_id);
+  const { getMachines } = await import("@/server/curdMachine");
+  const { getMachineGroups } = await import("@/server/curdMachineGroup");
+  const machines = await getMachines();
+  const machineGroups = await getMachineGroups();
 
   const headersList = headers();
   const host = headersList.get("host") || "";
@@ -85,16 +92,67 @@ export async function DeploymentsTable(props: { workflow_id: string }) {
           <TableRow>
             <TableHead className=" w-[100px]">Environment</TableHead>
             <TableHead className=" w-[100px]">Version</TableHead>
-            <TableHead className="">Machine</TableHead>
+            <TableHead className="">Machine / Group</TableHead>
             <TableHead className=" text-right">Updated At</TableHead>
+            <TableHead className=" w-[100px]">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {allRuns.map((run) => (
-            <DeploymentDisplay deployment={run} key={run.id} domain={domain} />
+            <DeploymentTableRow
+              key={run.id}
+              deployment={run}
+              domain={domain}
+              machines={machines}
+              machineGroups={machineGroups}
+            />
           ))}
         </TableBody>
       </Table>
     </div>
+  );
+}
+
+function DeploymentTableRow({
+  deployment,
+  domain,
+  machines,
+  machineGroups,
+}: {
+  deployment: Awaited<ReturnType<typeof findAllDeployments>>[0];
+  domain: string;
+  machines: Awaited<ReturnType<typeof getMachines>>;
+  machineGroups: Awaited<ReturnType<typeof getMachineGroups>>;
+}) {
+  return (
+    <TableRow>
+      <TableCell className="capitalize truncate">
+        {deployment.environment}
+      </TableCell>
+      <TableCell className="font-medium truncate">
+        {deployment.version?.version}
+      </TableCell>
+      <TableCell className="font-medium truncate">
+        {deployment.machine?.name || deployment.machineGroup?.name || "-"}
+        {deployment.machineGroup && (
+          <span className="text-xs text-muted-foreground ml-2">
+            (Group: {deployment.machineGroup.members.length} machines)
+          </span>
+        )}
+      </TableCell>
+      <TableCell className="text-right truncate">
+        {getRelativeTime(deployment.updated_at)}
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center gap-2">
+          <DeploymentDisplay deployment={deployment} domain={domain} />
+          <EditDeploymentDialog
+            deployment={deployment}
+            machines={machines}
+            machineGroups={machineGroups}
+          />
+        </div>
+      </TableCell>
+    </TableRow>
   );
 }

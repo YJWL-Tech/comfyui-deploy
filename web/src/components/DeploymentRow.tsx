@@ -29,7 +29,12 @@ export function SharePageDeploymentRow({
 				{deployment.version?.version}
 			</TableCell>
 			<TableCell className="font-medium truncate">
-				{deployment.machine?.name}
+				{deployment.machine?.name || deployment.machineGroup?.name || "-"}
+				{deployment.machineGroup && (
+					<span className="text-xs text-muted-foreground ml-2">
+						(Group: {deployment.machineGroup.members.length} machines)
+					</span>
+				)}
 			</TableCell>
 			<TableCell className="text-right truncate">
 				{getRelativeTime(deployment.updated_at)}
@@ -52,7 +57,12 @@ export function DeploymentRow({
 				{deployment.version?.version}
 			</TableCell>
 			<TableCell className="font-medium truncate">
-				{deployment.machine?.name}
+				{deployment.machine?.name || deployment.machineGroup?.name || "-"}
+				{deployment.machineGroup && (
+					<span className="text-xs text-muted-foreground ml-2">
+						(Group: {deployment.machineGroup.members.length} machines)
+					</span>
+				)}
 			</TableCell>
 			<TableCell className="text-right truncate">
 				{getRelativeTime(deployment.updated_at)}

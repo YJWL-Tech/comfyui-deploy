@@ -20,6 +20,7 @@ import {
 import { getRelativeTime } from "@/lib/getRelativeTime";
 import { getMachines } from "@/server/curdMachine";
 import { findFirstTableWithVersion } from "@/server/findFirstTableWithVersion";
+import { getMachineGroups } from "@/server/curdMachineGroup";
 
 export default async function Page({
   params,
@@ -30,6 +31,7 @@ export default async function Page({
 
   const workflow = await findFirstTableWithVersion(workflow_id);
   const machines = await getMachines();
+  const machineGroups = await getMachineGroups();
 
   return (
     <Card className="w-full h-fit">
@@ -45,7 +47,7 @@ export default async function Page({
           <VersionSelect workflow={workflow} />
           <MachineSelect machines={machines} />
           <RunWorkflowButton workflow={workflow} machines={machines} />
-          <CreateDeploymentButton workflow={workflow} machines={machines} />
+          <CreateDeploymentButton workflow={workflow} machines={machines} machineGroups={machineGroups} />
           <CreateShareButton workflow={workflow} machines={machines} />
           <CopyWorkflowVersion workflow={workflow} />
           <ViewWorkflowDetailsButton workflow={workflow} />

@@ -1,0 +1,1 @@
+ALTER TABLE "comfyui_deploy"."workflow_runs" ADD COLUMN "queue_job_id" text;

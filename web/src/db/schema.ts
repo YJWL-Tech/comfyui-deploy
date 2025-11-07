@@ -157,6 +157,8 @@ export const workflowRunsTable = dbSchema.table("workflow_runs", {
   ended_at: timestamp("ended_at"),
   created_at: timestamp("created_at").defaultNow().notNull(),
   started_at: timestamp("started_at"),
+  // 队列任务的 job_id，用于关联 BullMQ 任务
+  queue_job_id: text("queue_job_id"),
 });
 
 export const workflowRunRelations = relations(
@@ -202,6 +204,34 @@ export const workflowOutputRelations = relations(
   }),
 );
 
+// Machine groups table
+export const machineGroupsTable = dbSchema.table("machine_groups", {
+  id: uuid("id").primaryKey().defaultRandom().notNull(),
+  name: text("name").notNull(),
+  user_id: text("user_id")
+    .references(() => usersTable.id, {
+      onDelete: "cascade",
+    })
+    .notNull(),
+  org_id: text("org_id"),
+  description: text("description"),
+  created_at: timestamp("created_at").defaultNow().notNull(),
+  updated_at: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Machine group members table (many-to-many)
+export const machineGroupMembersTable = dbSchema.table(
+  "machine_group_members",
+  {
+    machine_id: uuid("machine_id")
+      .notNull()
+      .references(() => machinesTable.id, { onDelete: "cascade" }),
+    group_id: uuid("group_id")
+      .notNull()
+      .references(() => machineGroupsTable.id, { onDelete: "cascade" }),
+  },
+);
+
 // when user delete, also delete all the workflow versions
 export const machinesTable = dbSchema.table("machines", {
   id: uuid("id").primaryKey().defaultRandom().notNull(),
@@ -224,6 +254,12 @@ export const machinesTable = dbSchema.table("machines", {
   gpu: machineGPUOptions("gpu"),
   build_machine_instance_id: text("build_machine_instance_id"),
   build_log: text("build_log"),
+  // Queue management fields
+  operational_status: text("operational_status").default("idle").notNull(), // 'idle' | 'busy'
+  allow_comfyui_queue_size: integer("allow_comfyui_queue_size")
+    .default(3)
+    .notNull(),
+  current_queue_size: integer("current_queue_size").default(0).notNull(),
 });
 
 export const snapshotType = z.object({
@@ -275,9 +311,11 @@ export const deploymentsTable = dbSchema.table("deployments", {
     .references(() => workflowTable.id, {
       onDelete: "cascade",
     }),
-  machine_id: uuid("machine_id")
-    .notNull()
-    .references(() => machinesTable.id),
+  machine_id: uuid("machine_id").references(() => machinesTable.id),
+  machine_group_id: uuid("machine_group_id").references(
+    () => machineGroupsTable.id,
+    { onDelete: "set null" },
+  ),
   share_slug: text("share_slug").unique(),
   description: text("description"),
   showcase_media:
@@ -300,10 +338,39 @@ export const publicShareDeployment = z.object({
 //   showcase_media: true,
 // });
 
+export const machineGroupRelations = relations(
+  machineGroupsTable,
+  ({ one, many }) => ({
+    user: one(usersTable, {
+      fields: [machineGroupsTable.user_id],
+      references: [usersTable.id],
+    }),
+    members: many(machineGroupMembersTable),
+  }),
+);
+
+export const machineGroupMemberRelations = relations(
+  machineGroupMembersTable,
+  ({ one }) => ({
+    machine: one(machinesTable, {
+      fields: [machineGroupMembersTable.machine_id],
+      references: [machinesTable.id],
+    }),
+    group: one(machineGroupsTable, {
+      fields: [machineGroupMembersTable.group_id],
+      references: [machineGroupsTable.id],
+    }),
+  }),
+);
+
 export const deploymentsRelations = relations(deploymentsTable, ({ one }) => ({
   machine: one(machinesTable, {
     fields: [deploymentsTable.machine_id],
     references: [machinesTable.id],
+  }),
+  machineGroup: one(machineGroupsTable, {
+    fields: [deploymentsTable.machine_group_id],
+    references: [machineGroupsTable.id],
   }),
   version: one(workflowVersionTable, {
     fields: [deploymentsTable.workflow_version_id],
@@ -347,5 +414,6 @@ export const authRequestsTable = dbSchema.table("auth_requests", {
 export type UserType = InferSelectModel<typeof usersTable>;
 export type WorkflowType = InferSelectModel<typeof workflowTable>;
 export type MachineType = InferSelectModel<typeof machinesTable>;
+export type MachineGroupType = InferSelectModel<typeof machineGroupsTable>;
 export type WorkflowVersionType = InferSelectModel<typeof workflowVersionTable>;
 export type DeploymentType = InferSelectModel<typeof deploymentsTable>;

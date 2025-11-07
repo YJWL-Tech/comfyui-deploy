@@ -18,6 +18,10 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  // 启用 instrumentation hook（用于集成 worker）
+  experimental: {
+    instrumentationHook: true,
+  },
 };
 
 export default withSearch(withMDX(nextConfig));

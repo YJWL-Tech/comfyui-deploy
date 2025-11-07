@@ -15,7 +15,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -40,6 +48,7 @@ import {
   updateCustomMachine,
   updateMachine,
 } from "@/server/curdMachine";
+import { updateMachineQueueSettings, syncMachineQueueFromComfyUI } from "@/server/curdMachineGroup";
 import type {
   ColumnDef,
   ColumnFiltersState,
@@ -54,7 +63,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { ArrowUpDown, MoreHorizontal } from "lucide-react";
+import { ArrowUpDown, MoreHorizontal, RefreshCw, RotateCw } from "lucide-react";
 import * as React from "react";
 import { useState } from "react";
 import type { z } from "zod";
@@ -151,6 +160,54 @@ export const columns: ColumnDef<Machine>[] = [
     },
   },
   {
+    accessorKey: "operational_status",
+    header: () => <div className="text-left">Queue Status</div>,
+    cell: ({ row }) => {
+      const machine = row.original;
+      const [syncing, setSyncing] = useState(false);
+
+      return (
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <Badge
+              variant={
+                machine.operational_status === "idle" ? "success" : "amber"
+              }
+              className="w-fit capitalize"
+            >
+              {machine.operational_status}
+            </Badge>
+            {machine.type === "classic" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0"
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  setSyncing(true);
+                  try {
+                    await callServerPromise(
+                      syncMachineQueueFromComfyUI(machine.id)
+                    );
+                  } finally {
+                    setSyncing(false);
+                  }
+                }}
+                disabled={syncing}
+                title="Sync queue status from ComfyUI"
+              >
+                <RotateCw className={`h-3 w-3 ${syncing ? "animate-spin" : ""}`} />
+              </Button>
+            )}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {machine.current_queue_size} / {machine.allow_comfyui_queue_size}
+          </div>
+        </div>
+      );
+    },
+  },
+  {
     accessorKey: "date",
     sortingFn: "datetime",
     enableSorting: true,
@@ -178,6 +235,7 @@ export const columns: ColumnDef<Machine>[] = [
     cell: ({ row }) => {
       const machine = row.original;
       const [open, setOpen] = useState(false);
+      const [queueSettingsOpen, setQueueSettingsOpen] = useState(false);
 
       return (
         <DropdownMenu>
@@ -242,6 +300,9 @@ export const columns: ColumnDef<Machine>[] = [
             <DropdownMenuItem onClick={() => setOpen(true)}>
               Edit
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setQueueSettingsOpen(true)}>
+              Queue Settings
+            </DropdownMenuItem>
           </DropdownMenuContent>
           {machine.type === "comfy-deploy-serverless" ? (
             <UpdateModal
@@ -291,11 +352,96 @@ export const columns: ColumnDef<Machine>[] = [
               }}
             />
           )}
+          <QueueSettingsDialog
+            machine={machine}
+            open={queueSettingsOpen}
+            setOpen={setQueueSettingsOpen}
+          />
         </DropdownMenu>
       );
     },
   },
 ];
+
+function QueueSettingsDialog({
+  machine,
+  open,
+  setOpen,
+}: {
+  machine: Machine;
+  open: boolean;
+  setOpen: (open: boolean) => void;
+}) {
+  const [queueSize, setQueueSize] = useState(machine.allow_comfyui_queue_size);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Queue Settings</DialogTitle>
+          <DialogDescription>
+            Configure queue settings for {machine.name}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <Label>Current Status</Label>
+            <div className="mt-2 space-y-2">
+              <div className="flex justify-between">
+                <span className="text-sm text-muted-foreground">
+                  Operational Status:
+                </span>
+                <Badge
+                  variant={
+                    machine.operational_status === "idle" ? "success" : "amber"
+                  }
+                  className="capitalize"
+                >
+                  {machine.operational_status}
+                </Badge>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-muted-foreground">
+                  Current Queue:
+                </span>
+                <span className="text-sm font-medium">
+                  {machine.current_queue_size} / {machine.allow_comfyui_queue_size}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div>
+            <Label htmlFor="queue-size">Max Queue Size</Label>
+            <Input
+              id="queue-size"
+              type="number"
+              min="1"
+              max="10"
+              value={queueSize}
+              onChange={(e) => setQueueSize(parseInt(e.target.value) || 1)}
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Maximum number of concurrent tasks allowed on this machine
+            </p>
+          </div>
+          <Button
+            onClick={async () => {
+              await callServerPromise(
+                updateMachineQueueSettings({
+                  machine_id: machine.id,
+                  allow_comfyui_queue_size: queueSize,
+                }),
+              );
+              setOpen(false);
+            }}
+          >
+            Save Settings
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 export function MachineList({
   data,
@@ -311,6 +457,8 @@ export function MachineList({
   const [columnVisibility, setColumnVisibility] =
     React.useState<VisibilityState>({});
   const [rowSelection, setRowSelection] = React.useState({});
+  const [syncingAll, setSyncingAll] = React.useState(false);
+  const [autoSyncEnabled, setAutoSyncEnabled] = React.useState(true);
 
   const table = useReactTable({
     data,
@@ -331,9 +479,24 @@ export function MachineList({
     },
   });
 
+  // 定时自动同步（每30秒）
+  React.useEffect(() => {
+    if (!autoSyncEnabled) return;
+
+    const interval = setInterval(async () => {
+      try {
+        await callServerPromise(syncMachineQueueFromComfyUI());
+      } catch (error) {
+        console.error("Auto sync failed:", error);
+      }
+    }, 30000); // 30秒
+
+    return () => clearInterval(interval);
+  }, [autoSyncEnabled]);
+
   return (
     <div className="w-full">
-      <div className="flex items-center py-4">
+      <div className="flex items-center py-4 gap-2">
         <Input
           placeholder="Filter machines..."
           value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
@@ -342,7 +505,34 @@ export function MachineList({
           }
           className="max-w-sm"
         />
-        <div className="ml-auto flex gap-2">
+        <div className="ml-auto flex gap-2 items-center">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Checkbox
+              id="auto-sync"
+              checked={autoSyncEnabled}
+              onCheckedChange={(checked) => setAutoSyncEnabled(!!checked)}
+            />
+            <label htmlFor="auto-sync" className="cursor-pointer">
+              Auto Sync (30s)
+            </label>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              setSyncingAll(true);
+              try {
+                await callServerPromise(syncMachineQueueFromComfyUI());
+              } finally {
+                setSyncingAll(false);
+              }
+            }}
+            disabled={syncingAll}
+            className="gap-2"
+          >
+            <RefreshCw className={`h-4 w-4 ${syncingAll ? "animate-spin" : ""}`} />
+            Sync All Queues
+          </Button>
           <InsertModal
             dialogClassName="sm:max-w-[600px]"
             disabled={
@@ -409,9 +599,9 @@ export function MachineList({
                       {header.isPlaceholder
                         ? null
                         : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
-                          )}
+                          header.column.columnDef.header,
+                          header.getContext()
+                        )}
                     </TableHead>
                   );
                 })}

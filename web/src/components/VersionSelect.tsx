@@ -41,6 +41,7 @@ import { checkStatus, createRun } from "@/server/createRun";
 import { createDeployments } from "@/server/curdDeploments";
 import type { getMachines } from "@/server/curdMachine";
 import type { findFirstTableWithVersion } from "@/server/findFirstTableWithVersion";
+import { getMachineGroups } from "@/server/curdMachineGroup";
 import {
   Copy,
   Edit,
@@ -349,66 +350,131 @@ export function RunWorkflowButton({
 export function CreateDeploymentButton({
   workflow,
   machines,
+  machineGroups,
 }: {
   workflow: Awaited<ReturnType<typeof findFirstTableWithVersion>>;
   machines: Awaited<ReturnType<typeof getMachines>>;
+  machineGroups?: Awaited<ReturnType<typeof getMachineGroups>>;
 }) {
   const [version] = useQueryState("version", {
     defaultValue: workflow?.versions[0].version ?? 1,
     ...parseAsInteger,
   });
   const [machine] = useSelectedMachine(machines);
-
+  const [selectedGroup, setSelectedGroup] = useState<string>("");
+  const [useGroup, setUseGroup] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const workflow_version_id = workflow?.versions.find(
     (x) => x.version === version,
   )?.id;
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+    <Dialog>
+      <DialogTrigger asChild>
         <Button className="gap-2" disabled={isLoading} variant="outline">
           Deploy {isLoading ? <LoadingIcon /> : <MoreVertical size={14} />}
         </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-56">
-        <DropdownMenuItem
-          onClick={async () => {
-            if (!workflow_version_id) return;
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Create Deployment</DialogTitle>
+          <DialogDescription>
+            Choose machine or machine group for deployment
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <label className="flex items-center space-x-2">
+              <input
+                type="radio"
+                checked={!useGroup}
+                onChange={() => setUseGroup(false)}
+              />
+              <span>Use Single Machine</span>
+            </label>
+            {!useGroup && (
+              <MachineSelect machines={machines} />
+            )}
+          </div>
+          {machineGroups && machineGroups.length > 0 && (
+            <div>
+              <label className="flex items-center space-x-2">
+                <input
+                  type="radio"
+                  checked={useGroup}
+                  onChange={() => setUseGroup(true)}
+                />
+                <span>Use Machine Group</span>
+              </label>
+              {useGroup && (
+                <Select
+                  value={selectedGroup}
+                  onValueChange={setSelectedGroup}
+                  className="mt-2"
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a machine group" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {machineGroups.map((g) => (
+                      <SelectItem key={g.id} value={g.id}>
+                        {g.name} ({g.members.length} machines)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+          )}
+          <div className="flex gap-2">
+            <Button
+              onClick={async () => {
+                if (!workflow_version_id) return;
+                if (useGroup && !selectedGroup) return;
+                if (!useGroup && !machine) return;
 
-            setIsLoading(true);
-            await callServerPromise(
-              createDeployments(
-                workflow.id,
-                workflow_version_id,
-                machine,
-                "production",
-              ),
-            );
-            setIsLoading(false);
-          }}
-        >
-          Production
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={async () => {
-            if (!workflow_version_id) return;
+                setIsLoading(true);
+                await callServerPromise(
+                  createDeployments(
+                    workflow.id,
+                    workflow_version_id,
+                    useGroup ? null : machine,
+                    useGroup ? selectedGroup : null,
+                    "production",
+                  ),
+                );
+                setIsLoading(false);
+              }}
+              disabled={isLoading || (useGroup ? !selectedGroup : !machine)}
+            >
+              Deploy to Production
+            </Button>
+            <Button
+              variant="outline"
+              onClick={async () => {
+                if (!workflow_version_id) return;
+                if (!machine) return; // Staging只能使用machine
 
-            setIsLoading(true);
-            await callServerPromise(
-              createDeployments(
-                workflow.id,
-                workflow_version_id,
-                machine,
-                "staging",
-              ),
-            );
-            setIsLoading(false);
-          }}
-        >
-          Staging
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+                setIsLoading(true);
+                await callServerPromise(
+                  createDeployments(
+                    workflow.id,
+                    workflow_version_id,
+                    machine,
+                    null,
+                    "staging",
+                  ),
+                );
+                setIsLoading(false);
+              }}
+              disabled={isLoading || !machine}
+            >
+              Deploy to Staging
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

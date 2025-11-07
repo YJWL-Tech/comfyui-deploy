@@ -18,14 +18,21 @@ import type { z } from "zod";
 export async function createDeployments(
   workflow_id: string,
   version_id: string,
-  machine_id: string,
+  machine_id: string | null,
+  machine_group_id: string | null,
   environment: DeploymentType["environment"],
 ) {
   const { userId, orgId } = auth();
   if (!userId) throw new Error("No user id");
 
-  if (!machine_id) {
-    throw new Error("No machine id provided");
+  // Staging环境只能使用machine_id
+  if (environment === "staging" && machine_group_id) {
+    throw new Error("Staging environment can only use machine_id, not machine_group_id");
+  }
+
+  // 至少需要一个machine_id或machine_group_id
+  if (!machine_id && !machine_group_id) {
+    throw new Error("Either machine_id or machine_group_id must be provided");
   }
 
   // Same environment and same workflow
@@ -42,7 +49,8 @@ export async function createDeployments(
       .set({
         workflow_id,
         workflow_version_id: version_id,
-        machine_id,
+        machine_id: machine_id || null,
+        machine_group_id: machine_group_id || null,
         org_id: orgId,
       })
       .where(eq(deploymentsTable.id, existingDeployment.id));
@@ -72,7 +80,8 @@ export async function createDeployments(
       user_id: userId,
       workflow_id,
       workflow_version_id: version_id,
-      machine_id,
+      machine_id: machine_id || null,
+      machine_group_id: machine_group_id || null,
       environment,
       org_id: orgId,
       // only create share slug if this is public share

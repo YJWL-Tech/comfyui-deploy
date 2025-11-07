@@ -10,6 +10,7 @@ import { registerWorkflowUploadRoute } from "@/routes/registerWorkflowUploadRout
 import { registerWorkflowVersionRoute } from "@/routes/registerWorkflowVersionRoute";
 import { registerGetAuthResponse } from "@/routes/registerGetAuthResponse";
 import { registerGetWorkflowRoute } from "@/routes/registerGetWorkflow";
+import { registerQueueRoute, registerQueueStatusRoute } from "@/routes/registerQueueRoute";
 import { cors } from "hono/cors";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 5 minutes
@@ -47,6 +48,7 @@ async function checkAuth(c: Context, next: Next, headers?: HeadersInit) {
 
 app.use("/run", checkAuth);
 app.use("/upload-url", checkAuth);
+app.use("/queue/*", checkAuth);
 
 const corsHandler = cors({
   origin: "*",
@@ -74,6 +76,8 @@ registerGetAuthResponse(app);
 registerWorkflowUploadRoute(app);
 registerWorkflowVersionRoute(app);
 registerGetWorkflowRoute(app);
+registerQueueRoute(app);
+registerQueueStatusRoute(app);
 
 // The OpenAPI documentation will be available at /doc
 app.doc("/doc", {
