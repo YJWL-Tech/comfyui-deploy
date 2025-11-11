@@ -267,6 +267,13 @@
       "when": 1762828765877,
       "tag": "0037_daffy_veda",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "5",
+      "when": 1762830422672,
+      "tag": "0038_elite_blizzard",
+      "breakpoints": true
     }
   ]
 }

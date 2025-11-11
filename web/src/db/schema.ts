@@ -431,12 +431,73 @@ export const volumeModelsTable = dbSchema.table("volume_models", {
   updated_at: timestamp("updated_at").defaultNow().notNull(),
 });
 
-export const volumeModelsRelations = relations(volumeModelsTable, ({ one }) => ({
+export const volumeModelsRelations = relations(volumeModelsTable, ({ one, many }) => ({
   user: one(usersTable, {
     fields: [volumeModelsTable.user_id],
     references: [usersTable.id],
   }),
+  pushTasks: many(modelPushTasksTable),
 }));
+
+export const modelPushStatus = pgEnum("model_push_status", [
+  "pending",
+  "downloading",
+  "completed",
+  "failed",
+]);
+
+export const modelPushTasksTable = dbSchema.table("model_push_tasks", {
+  id: uuid("id").primaryKey().defaultRandom().notNull(),
+  user_id: text("user_id")
+    .references(() => usersTable.id, {
+      onDelete: "cascade",
+    })
+    .notNull(),
+  org_id: text("org_id"),
+  model_id: uuid("model_id")
+    .references(() => volumeModelsTable.id, {
+      onDelete: "cascade",
+    })
+    .notNull(),
+  machine_id: uuid("machine_id").references(() => machinesTable.id, {
+    onDelete: "cascade",
+  }),
+  machine_group_id: uuid("machine_group_id").references(
+    () => machineGroupsTable.id,
+    {
+      onDelete: "cascade",
+    }
+  ),
+  status: text("status").notNull().default("pending"), // 'pending' | 'downloading' | 'completed' | 'failed'
+  progress: integer("progress").default(0),
+  error_message: text("error_message"),
+  started_at: timestamp("started_at"),
+  completed_at: timestamp("completed_at"),
+  created_at: timestamp("created_at").defaultNow().notNull(),
+  updated_at: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const modelPushTasksRelations = relations(
+  modelPushTasksTable,
+  ({ one }) => ({
+    user: one(usersTable, {
+      fields: [modelPushTasksTable.user_id],
+      references: [usersTable.id],
+    }),
+    model: one(volumeModelsTable, {
+      fields: [modelPushTasksTable.model_id],
+      references: [volumeModelsTable.id],
+    }),
+    machine: one(machinesTable, {
+      fields: [modelPushTasksTable.machine_id],
+      references: [machinesTable.id],
+    }),
+    machineGroup: one(machineGroupsTable, {
+      fields: [modelPushTasksTable.machine_group_id],
+      references: [machineGroupsTable.id],
+    }),
+  }),
+);
 
 export type UserType = InferSelectModel<typeof usersTable>;
 export type WorkflowType = InferSelectModel<typeof workflowTable>;
@@ -445,3 +506,4 @@ export type MachineGroupType = InferSelectModel<typeof machineGroupsTable>;
 export type WorkflowVersionType = InferSelectModel<typeof workflowVersionTable>;
 export type DeploymentType = InferSelectModel<typeof deploymentsTable>;
 export type VolumeModelType = InferSelectModel<typeof volumeModelsTable>;
+export type ModelPushTaskType = InferSelectModel<typeof modelPushTasksTable>;

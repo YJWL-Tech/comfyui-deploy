@@ -13,6 +13,7 @@ import { registerGetWorkflowRoute } from "@/routes/registerGetWorkflow";
 import { registerQueueRoute, registerQueueStatusRoute } from "@/routes/registerQueueRoute";
 import { registerQueueManagementRoute } from "@/routes/registerQueueManagementRoute";
 import { registerVolumeRoute } from "@/routes/registerVolumeRoute";
+import { registerModelPushRoute } from "@/routes/registerModelPushRoute";
 import { cors } from "hono/cors";
 
 export const dynamic = "force-dynamic";
@@ -54,12 +55,11 @@ async function checkAuth(c: Context, next: Next, headers?: HeadersInit) {
 app.use("/run", checkAuth);
 app.use("/upload-url", checkAuth);
 app.use("/queue/*", checkAuth);
-app.use("/volume/*", checkAuth);
 
 const corsHandler = cors({
   origin: "*",
   allowHeaders: ["Authorization", "Content-Type"],
-  allowMethods: ["POST", "GET", "OPTIONS"],
+  allowMethods: ["POST", "GET", "OPTIONS", "PATCH"],
   exposeHeaders: ["Content-Length"],
   maxAge: 600,
   credentials: true,
@@ -68,7 +68,32 @@ const corsHandler = cors({
 // CORS Check
 app.use("/workflow", corsHandler, checkAuth);
 app.use("/workflow-version/*", corsHandler, checkAuth);
+
+// 排除 model push 状态更新接口（供 ComfyUI 机器调用）
+// 必须在 CORS 之后，但在其他认证之前
 app.use("/volume/*", corsHandler);
+app.use("/volume/*", async (c, next) => {
+  // 如果是更新任务状态的 PATCH 请求，跳过认证
+  const method = c.req.method;
+  const url = new URL(c.req.url);
+  const pathname = url.pathname;
+
+  // 匹配 /api/volume/model/push/{task_id} 或 /volume/model/push/{task_id} 的 PATCH 请求
+  const isUpdateTaskStatus =
+    method === "PATCH" &&
+    (/\/volume\/model\/push\/[a-f0-9-]+$/.test(pathname) ||
+      /\/api\/volume\/model\/push\/[a-f0-9-]+$/.test(pathname));
+
+  if (isUpdateTaskStatus) {
+    console.log(`[Auth Middleware] Skipping auth for PATCH ${pathname}`);
+    // 跳过认证，直接继续
+    await next();
+    return;
+  }
+  // 其他 /volume/* 请求需要认证
+  console.log(`[Auth Middleware] Requiring auth for ${method} ${pathname}`);
+  await checkAuth(c, next);
+});
 
 // create run endpoint
 registerCreateRunRoute(app);
@@ -87,6 +112,7 @@ registerQueueRoute(app);
 registerQueueStatusRoute(app);
 registerQueueManagementRoute(app);
 registerVolumeRoute(app);
+registerModelPushRoute(app);
 
 // The OpenAPI documentation will be available at /doc
 app.doc("/doc", {
@@ -114,4 +140,7 @@ const handler = handle(app);
 
 export const GET = handler;
 export const POST = handler;
+export const PATCH = handler;
+export const PUT = handler;
+export const DELETE = handler;
 export const OPTIONS = handler;

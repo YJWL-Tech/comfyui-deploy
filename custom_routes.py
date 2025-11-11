@@ -2356,6 +2356,11 @@ async def initialize_upload_queue(app=None):
 server.PromptServer.instance.app.on_startup.append(initialize_upload_queue)
 
 
+# ============== Model Push - Manual Trigger System ==============
+
+# 移除了自动轮询系统，改为从 Web UI 主动触发下载
+
+
 async def monitor_upload_queue():
     """Monitor the upload queue and log statistics periodically"""
     while True:
@@ -3668,4 +3673,191 @@ async def upload_part_from_path(request):
             etag = etag.replace('"', "")
             return web.json_response({"eTag": etag, "bytesSent": size})
     except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+
+# Get pending model push tasks for this machine
+@server.PromptServer.instance.routes.get("/comfyui-deploy/model/push/pending")
+async def get_pending_push_tasks(request):
+    """
+    获取当前机器的待推送模型任务列表
+    """
+    try:
+        auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            return web.json_response(
+                {"error": "Authorization header is required"}, status=401
+            )
+
+        machine_id = request.rel_url.query.get("machine_id")
+        api_url = request.rel_url.query.get("api_url", "https://api.comfydeploy.com")
+
+        if not machine_id:
+            return web.json_response({"error": "machine_id is required"}, status=400)
+
+        # 请求服务器获取待下载的任务
+        target_url = f"{api_url}/api/volume/model/push/list?machine_id={machine_id}&status=pending"
+
+        await ensure_client_session()
+        async with client_session.get(
+            target_url, headers={"Authorization": auth_header}
+        ) as response:
+            json_data = await response.json()
+            return web.json_response(json_data, status=response.status)
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+
+# Download model from S3 and save to ComfyUI models folder
+@server.PromptServer.instance.routes.post("/comfyui-deploy/model/download")
+async def download_model(request):
+    """
+    下载模型文件到 ComfyUI 的 models 目录
+    由 Web UI 服务器主动触发，不需要认证
+    """
+    try:
+        data = await request.json()
+        task_id = data.get("task_id")
+        download_url = data.get("download_url")
+        folder_path = data.get("folder_path")  # e.g., "checkpoints", "loras"
+        filename = data.get("filename")
+        api_url = data.get("api_url", "https://api.comfydeploy.com")
+        # auth_token 不再需要，更新状态 API 已经去掉认证
+
+        if not all([task_id, download_url, folder_path, filename]):
+            return web.json_response(
+                {"error": "task_id, download_url, folder_path, and filename are required"},
+                status=400,
+            )
+
+        # 构建目标路径
+        base_path = folder_paths.base_path
+        # folder_path 格式如 "/checkpoints", 需要去掉前导斜杠
+        folder_name = folder_path.lstrip("/")
+        
+        # 确保文件夹存在于 folder_paths 映射中
+        if folder_name not in folder_paths.folder_names_and_paths:
+            return web.json_response(
+                {"error": f"Unknown folder type: {folder_name}"}, status=400
+            )
+
+        # 获取该类型模型的第一个存储路径
+        model_folders = folder_paths.folder_names_and_paths[folder_name][0]
+        if not model_folders:
+            return web.json_response(
+                {"error": f"No storage path configured for {folder_name}"}, status=500
+            )
+
+        target_dir = model_folders[0]
+        target_path = os.path.join(target_dir, filename)
+
+        # 确保目标目录存在
+        os.makedirs(target_dir, exist_ok=True)
+
+        # 更新任务状态为 downloading
+        update_url = f"{api_url}/api/volume/model/push/{task_id}"
+        await ensure_client_session()
+        
+        logger.info(f"🔄 Updating task {task_id} status to 'downloading' at {update_url}")
+        async with client_session.patch(
+            update_url,
+            json={"status": "downloading", "progress": 0},
+            headers={"Content-Type": "application/json"},
+        ) as resp:
+            response_text = await resp.text()
+            if resp.status >= 400:
+                logger.error(f"❌ Failed to update task status: HTTP {resp.status}, Response: {response_text}")
+            else:
+                logger.info(f"✅ Successfully updated task status to 'downloading' (HTTP {resp.status})")
+
+        # 下载文件
+        logger.info(f"Starting download: {filename} to {target_path}")
+        
+        async with client_session.get(download_url) as resp:
+            if resp.status != 200:
+                error_msg = f"Failed to download: HTTP {resp.status}"
+                # 更新任务状态为 failed
+                logger.warning(f"🔄 Updating task {task_id} status to 'failed': {error_msg}")
+                async with client_session.patch(
+                    update_url,
+                    json={"status": "failed", "error_message": error_msg},
+                    headers={"Content-Type": "application/json"},
+                ) as update_resp:
+                    update_response_text = await update_resp.text()
+                    if update_resp.status >= 400:
+                        logger.error(f"❌ Failed to update task status to 'failed': HTTP {update_resp.status}, Response: {update_response_text}")
+                    else:
+                        logger.info(f"✅ Successfully updated task status to 'failed' (HTTP {update_resp.status})")
+                return web.json_response({"error": error_msg}, status=resp.status)
+
+            total_size = int(resp.headers.get("Content-Length", 0))
+            downloaded_size = 0
+            last_progress = 0
+
+            # 写入文件
+            async with aiofiles.open(target_path, "wb") as f:
+                async for chunk in resp.content.iter_chunked(8192 * 1024):  # 8MB chunks
+                    await f.write(chunk)
+                    downloaded_size += len(chunk)
+
+                    # 更新进度（每10%报告一次）
+                    if total_size > 0:
+                        progress = int((downloaded_size / total_size) * 100)
+                        if progress >= last_progress + 10:
+                            last_progress = progress
+                            logger.info(f"🔄 Updating task {task_id} progress to {progress}%")
+                            async with client_session.patch(
+                                update_url,
+                                json={"progress": progress},
+                                headers={"Content-Type": "application/json"},
+                            ) as update_resp:
+                                if update_resp.status >= 400:
+                                    update_response_text = await update_resp.text()
+                                    logger.error(f"❌ Failed to update progress: HTTP {update_resp.status}, Response: {update_response_text}")
+                            logger.info(f"Download progress: {progress}%")
+
+        # 下载完成，更新任务状态
+        logger.info(f"Download completed: {filename}")
+        logger.info(f"🔄 Updating task {task_id} status to 'completed'")
+        async with client_session.patch(
+            update_url,
+            json={"status": "completed", "progress": 100},
+            headers={"Content-Type": "application/json"},
+        ) as resp:
+            response_text = await resp.text()
+            if resp.status >= 400:
+                logger.error(f"❌ Failed to update task status to 'completed': HTTP {resp.status}, Response: {response_text}")
+            else:
+                logger.info(f"✅ Successfully updated task status to 'completed' (HTTP {resp.status})")
+
+        return web.json_response(
+            {
+                "success": True,
+                "path": target_path,
+                "size": downloaded_size,
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error downloading model: {str(e)}")
+        traceback.print_exc()
+
+        # 尝试更新任务状态为 failed
+        try:
+            if "task_id" in data and "api_url" in data:
+                task_id = data.get("task_id")
+                update_url = f"{data['api_url']}/api/volume/model/push/{task_id}"
+                logger.warning(f"🔄 Updating task {task_id} status to 'failed' due to exception: {str(e)}")
+                async with client_session.patch(
+                    update_url,
+                    json={"status": "failed", "error_message": str(e)},
+                    headers={"Content-Type": "application/json"},
+                ) as resp:
+                    response_text = await resp.text()
+                    if resp.status >= 400:
+                        logger.error(f"❌ Failed to update task status to 'failed': HTTP {resp.status}, Response: {response_text}")
+                    else:
+                        logger.info(f"✅ Successfully updated task status to 'failed' (HTTP {resp.status})")
+        except:
+            pass
+
         return web.json_response({"error": str(e)}, status=500)

@@ -17,9 +17,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Download, Trash2, FileIcon } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Download, Trash2, FileIcon, Send, History } from "lucide-react";
 import { toast } from "sonner";
 import { getModels, deleteModel, generateDownloadUrl } from "@/app/(app)/models/actions";
+import { ModelPushDialog } from "@/components/ModelPushDialog";
+import Link from "next/link";
 
 interface Model {
   id: string;
@@ -34,6 +37,7 @@ export function ModelsManagement() {
   const [models, setModels] = useState<Model[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [selectedModelIds, setSelectedModelIds] = useState<string[]>([]);
 
   useEffect(() => {
     fetchModels();
@@ -73,7 +77,7 @@ export function ModelsManagement() {
   const handleDownload = async (model: Model) => {
     try {
       const { downloadUrl } = await generateDownloadUrl(model.s3_object_key);
-      
+
       // Open download URL in new tab
       window.open(downloadUrl, "_blank");
       toast.success("正在下载模型");
@@ -95,6 +99,27 @@ export function ModelsManagement() {
 
   const formatDate = (date: Date) => {
     return new Date(date).toLocaleString("zh-CN");
+  };
+
+  const toggleSelectModel = (modelId: string) => {
+    setSelectedModelIds((prev) =>
+      prev.includes(modelId)
+        ? prev.filter((id) => id !== modelId)
+        : [...prev, modelId]
+    );
+  };
+
+  const selectAllModels = () => {
+    if (selectedModelIds.length === models.length) {
+      setSelectedModelIds([]);
+    } else {
+      setSelectedModelIds(models.map((m) => m.id));
+    }
+  };
+
+  const handlePushSuccess = () => {
+    setSelectedModelIds([]);
+    toast.success("推送任务创建成功，请前往任务页面查看进度");
   };
 
   if (loading) {
@@ -123,13 +148,48 @@ export function ModelsManagement() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>模型列表</CardTitle>
-        <CardDescription>共 {models.length} 个模型</CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>模型列表</CardTitle>
+            <CardDescription>
+              共 {models.length} 个模型
+              {selectedModelIds.length > 0 && ` · 已选择 ${selectedModelIds.length} 个`}
+            </CardDescription>
+          </div>
+          <div className="flex gap-2">
+            <Button asChild variant="outline">
+              <Link href="/models/push">
+                <History className="h-4 w-4 mr-2" />
+                推送任务
+              </Link>
+            </Button>
+            <ModelPushDialog
+              selectedModelIds={selectedModelIds}
+              onSuccess={handlePushSuccess}
+              trigger={
+                <Button disabled={selectedModelIds.length === 0}>
+                  <Send className="h-4 w-4 mr-2" />
+                  推送到机器 ({selectedModelIds.length})
+                </Button>
+              }
+            />
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-[50px]">
+                <Checkbox
+                  checked={
+                    selectedModelIds.length === models.length &&
+                    models.length > 0
+                  }
+                  onCheckedChange={selectAllModels}
+                  aria-label="全选"
+                />
+              </TableHead>
               <TableHead>文件名</TableHead>
               <TableHead>路径</TableHead>
               <TableHead>大小</TableHead>
@@ -139,7 +199,21 @@ export function ModelsManagement() {
           </TableHeader>
           <TableBody>
             {models.map((model) => (
-              <TableRow key={model.id}>
+              <TableRow
+                key={model.id}
+                className={
+                  selectedModelIds.includes(model.id)
+                    ? "bg-muted/50"
+                    : ""
+                }
+              >
+                <TableCell>
+                  <Checkbox
+                    checked={selectedModelIds.includes(model.id)}
+                    onCheckedChange={() => toggleSelectModel(model.id)}
+                    aria-label={`选择 ${model.filename}`}
+                  />
+                </TableCell>
                 <TableCell className="font-medium">{model.filename}</TableCell>
                 <TableCell className="text-muted-foreground">
                   {model.folder_path}
