@@ -74,6 +74,7 @@ export function FileList({
     key: string;
     downloadUrl?: string;
   } | null>(null);
+  const [openMenuKey, setOpenMenuKey] = useState<string | null>(null);
 
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return "0 B";
@@ -86,6 +87,7 @@ export function FileList({
   const handleDeleteClick = (key: string, name: string, isFolder: boolean) => {
     setItemToDelete({ key, name, isFolder });
     setDeleteDialogOpen(true);
+    setOpenMenuKey(null); // 关闭当前打开的菜单
   };
 
   const confirmDelete = () => {
@@ -96,7 +98,16 @@ export function FileList({
     }
   };
 
+  const handleDeleteDialogChange = (open: boolean) => {
+    setDeleteDialogOpen(open);
+    if (!open) {
+      // 对话框关闭时清空状态
+      setItemToDelete(null);
+    }
+  };
+
   const handleShowLinks = async (file: FileItem) => {
+    setOpenMenuKey(null); // 关闭菜单
     try {
       if (!apiKey) {
         toast.error("API密钥未加载");
@@ -127,6 +138,19 @@ export function FileList({
     } catch (error) {
       console.error("Error getting download URL:", error);
       toast.error("获取下载链接失败");
+    }
+  };
+
+  const handleDownloadClick = (key: string) => {
+    setOpenMenuKey(null); // 关闭菜单
+    onDownload(key);
+  };
+
+  const handleLinkDialogChange = (open: boolean) => {
+    setLinkDialogOpen(open);
+    if (!open) {
+      // 对话框关闭时清空状态
+      setCurrentFile(null);
     }
   };
 
@@ -176,7 +200,10 @@ export function FileList({
                 <TableCell className="text-gray-500">-</TableCell>
                 <TableCell className="text-gray-500">-</TableCell>
                 <TableCell onClick={(e) => e.stopPropagation()}>
-                  <DropdownMenu>
+                  <DropdownMenu
+                    open={openMenuKey === folder.prefix}
+                    onOpenChange={(open) => setOpenMenuKey(open ? folder.prefix : null)}
+                  >
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="sm">
                         <MoreVertical className="w-4 h-4" />
@@ -216,14 +243,17 @@ export function FileList({
                     })}
                 </TableCell>
                 <TableCell>
-                  <DropdownMenu>
+                  <DropdownMenu
+                    open={openMenuKey === file.key}
+                    onOpenChange={(open) => setOpenMenuKey(open ? file.key : null)}
+                  >
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="sm">
                         <MoreVertical className="w-4 h-4" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => onDownload(file.key)}>
+                      <DropdownMenuItem onClick={() => handleDownloadClick(file.key)}>
                         <Download className="w-4 h-4 mr-2" />
                         下载
                       </DropdownMenuItem>
@@ -249,7 +279,7 @@ export function FileList({
         </Table>
       </div>
 
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+      <AlertDialog open={deleteDialogOpen} onOpenChange={handleDeleteDialogChange}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>确认删除</AlertDialogTitle>
@@ -273,7 +303,7 @@ export function FileList({
       </AlertDialog>
 
       {/* 链接查看对话框 */}
-      <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
+      <Dialog open={linkDialogOpen} onOpenChange={handleLinkDialogChange}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>文件链接</DialogTitle>
@@ -345,7 +375,7 @@ export function FileList({
             )}
           </div>
           <DialogFooter>
-            <Button onClick={() => setLinkDialogOpen(false)}>
+            <Button onClick={() => handleLinkDialogChange(false)}>
               关闭
             </Button>
           </DialogFooter>
