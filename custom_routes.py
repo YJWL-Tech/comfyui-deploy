@@ -1187,6 +1187,92 @@ async def comfy_deploy_check_status(request):
         return web.json_response({"message": "prompt_id not found"})
 
 
+# 实时日志 WebSocket 端点
+@server.PromptServer.instance.routes.get("/comfyui-deploy/logs/ws")
+async def logs_websocket_handler(request):
+    """实时日志 WebSocket 连接，用于查看 ComfyUI 后台日志"""
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+    
+    sid = uuid.uuid4().hex
+    log_websockets[sid] = ws
+    
+    logger.info(f"Log WebSocket connected: {sid}")
+    
+    try:
+        # 发送初始的历史日志（最后 1000 行）
+        if os.path.exists(comfyui_file_path):
+            try:
+                with open(comfyui_file_path, "r", encoding="utf-8", errors="ignore") as file:
+                    lines = file.readlines()
+                    # 只发送最后 1000 行
+                    recent_lines = lines[-1000:] if len(lines) > 1000 else lines
+                    initial_logs = "".join(recent_lines)
+                    
+                    await ws.send_json({
+                        "event": "log",
+                        "data": {
+                            "content": initial_logs,
+                            "timestamp": time.time(),
+                            "initial": True
+                        }
+                    })
+            except Exception as e:
+                logger.error(f"Error sending initial logs: {e}")
+                await ws.send_json({
+                    "event": "error",
+                    "data": {"message": f"Failed to read log file: {str(e)}"}
+                })
+        else:
+            # 如果日志文件不存在，发送提示信息，但继续连接等待文件创建
+            help_message = f"""[INFO] ComfyUI log file not found: {comfyui_file_path}
+
+[INFO] 可能的原因：
+1. ComfyUI 默认不写日志文件，日志输出到控制台
+2. 日志文件路径不正确
+
+[INFO] 解决方案：
+1. 设置环境变量 COMFYUI_LOG_FILE 指定日志文件路径
+   例如：export COMFYUI_LOG_FILE=/path/to/your/comfyui.log
+2. 或者配置 ComfyUI 将日志写入文件
+3. 或者重定向 ComfyUI 的输出到文件：
+   python main.py > comfyui.log 2>&1
+
+[INFO] 正在监控日志文件，一旦文件创建，日志将自动显示...
+
+"""
+            await ws.send_json({
+                "event": "log",
+                "data": {
+                    "content": help_message,
+                    "timestamp": time.time(),
+                    "initial": True
+                }
+            })
+            logger.info(f"Log file not found, but WebSocket connection established. Will monitor: {comfyui_file_path}")
+        
+        # 保持连接，等待客户端断开
+        async for msg in ws:
+            if msg.type == aiohttp.WSMsgType.TEXT:
+                try:
+                    data = json.loads(msg.data)
+                    # 可以处理客户端发送的消息，比如暂停/恢复等
+                    if data.get("event") == "ping":
+                        await ws.send_json({"event": "pong"})
+                except json.JSONDecodeError:
+                    pass
+            elif msg.type == aiohttp.WSMsgType.ERROR:
+                break
+                
+    except Exception as e:
+        logger.error(f"Error in logs WebSocket handler: {e}")
+    finally:
+        log_websockets.pop(sid, None)
+        logger.info(f"Log WebSocket disconnected: {sid}")
+    
+    return ws
+
+
 @server.PromptServer.instance.routes.get("/comfyui-deploy/check-ws-status")
 async def comfy_deploy_check_ws_status(request):
     client_id = request.rel_url.query.get("client_id", None)
@@ -2289,9 +2375,62 @@ prompt_server.send_json = send_json_override.__get__(prompt_server, server.Promp
 root_path = os.path.dirname(os.path.abspath(__file__))
 two_dirs_up = os.path.dirname(os.path.dirname(root_path))
 log_file_path = os.path.join(two_dirs_up, "comfy-deploy.log")
-comfyui_file_path = os.path.join(two_dirs_up, "comfyui.log")
+
+# ComfyUI 日志文件路径
+# 优先使用环境变量指定的路径
+comfyui_file_path = os.environ.get("COMFYUI_LOG_FILE")
+if not comfyui_file_path:
+    # 如果没有环境变量，尝试多个可能的路径
+    possible_log_paths = [
+        os.path.join(two_dirs_up, "comfyui.log"),
+        os.path.join(two_dirs_up, "server.log"),
+        os.path.join(two_dirs_up, "output.log"),
+        os.path.join(os.getcwd(), "comfyui.log"),  # 当前工作目录
+    ]
+    
+    # 查找存在的日志文件
+    comfyui_file_path = None
+    for path in possible_log_paths:
+        if os.path.exists(path):
+            comfyui_file_path = path
+            logger.info(f"Found ComfyUI log file: {path}")
+            break
+    
+    # 如果都不存在，使用第一个作为默认（会在文件创建时开始监控）
+    if comfyui_file_path is None:
+        comfyui_file_path = possible_log_paths[0]
+        logger.info(f"ComfyUI log file not found, will monitor: {comfyui_file_path}")
+        logger.info(f"To specify a custom log file, set COMFYUI_LOG_FILE environment variable")
 
 last_read_line = 0
+last_read_line_comfyui = 0  # 用于 ComfyUI 日志
+
+# 存储日志 WebSocket 连接
+log_websockets = {}  # {sid: ws}
+
+# 自定义日志处理器，用于捕获日志并发送到 WebSocket
+class WebSocketLogHandler(logging.Handler):
+    """自定义日志处理器，将日志发送到所有连接的 WebSocket"""
+    
+    def emit(self, record):
+        try:
+            log_message = self.format(record)
+            # 异步发送日志（需要在事件循环中运行）
+            asyncio.create_task(send_logs_to_all_websockets(log_message + "\n"))
+        except Exception:
+            pass  # 忽略错误，避免日志循环
+
+# 创建并添加自定义日志处理器
+websocket_log_handler = WebSocketLogHandler()
+websocket_log_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+
+# 获取 ComfyUI 的 logger（如果存在）
+try:
+    comfyui_logger = logging.getLogger("ComfyUI")
+    comfyui_logger.addHandler(websocket_log_handler)
+    comfyui_logger.setLevel(logging.INFO)
+except Exception:
+    pass
 
 
 async def watch_file_changes(file_path, callback):
@@ -2310,6 +2449,95 @@ async def watch_file_changes(file_path, callback):
             last_read_line = len(lines)
             if new_lines:
                 await callback("".join(new_lines))
+
+
+async def watch_comfyui_log_file():
+    """监控 ComfyUI 日志文件并实时发送到所有连接的 WebSocket"""
+    global last_read_line_comfyui
+    
+    # 等待一下，确保服务器完全启动
+    await asyncio.sleep(2)
+    
+    if not os.path.exists(comfyui_file_path):
+        logger.warning(f"ComfyUI log file not found: {comfyui_file_path}")
+        logger.info(f"Will retry checking for log file every 10 seconds...")
+        # 如果文件不存在，定期检查
+        while not os.path.exists(comfyui_file_path):
+            await asyncio.sleep(10)
+            if os.path.exists(comfyui_file_path):
+                logger.info(f"ComfyUI log file found: {comfyui_file_path}")
+                break
+    
+    logger.info(f"Starting ComfyUI log file watcher: {comfyui_file_path}")
+    last_modified_time = os.stat(comfyui_file_path).st_mtime
+    
+    while True:
+        try:
+            await asyncio.sleep(0.5)  # 每 0.5 秒检查一次
+            
+            if not os.path.exists(comfyui_file_path):
+                await asyncio.sleep(5)  # 如果文件不存在，等待更长时间
+                continue
+            
+            modified_time = os.stat(comfyui_file_path).st_mtime
+            
+            if modified_time != last_modified_time:
+                last_modified_time = modified_time
+                
+                try:
+                    with open(comfyui_file_path, "r", encoding="utf-8", errors="ignore") as file:
+                        lines = file.readlines()
+                    
+                    if last_read_line_comfyui > len(lines):
+                        last_read_line_comfyui = 0  # Reset if log file has been rotated
+                    
+                    new_lines = lines[last_read_line_comfyui:]
+                    last_read_line_comfyui = len(lines)
+                    
+                    if new_lines:
+                        new_log_content = "".join(new_lines)
+                        # 发送到所有连接的日志 WebSocket
+                        await send_logs_to_all_websockets(new_log_content)
+                        
+                except Exception as e:
+                    logger.error(f"Error reading ComfyUI log file: {e}")
+                    traceback.print_exc()
+                    await asyncio.sleep(5)
+                    
+        except Exception as e:
+            logger.error(f"Error in watch_comfyui_log_file: {e}")
+            traceback.print_exc()
+            await asyncio.sleep(5)
+
+
+async def send_logs_to_all_websockets(log_content):
+    """发送日志内容到所有连接的日志 WebSocket"""
+    if not log_websockets:
+        return  # 没有连接的客户端，直接返回
+    
+    disconnected_sids = []
+    
+    for sid, ws in log_websockets.items():
+        try:
+            if ws.closed:
+                disconnected_sids.append(sid)
+                continue
+            
+            await ws.send_json({
+                "event": "log",
+                "data": {
+                    "content": log_content,
+                    "timestamp": time.time()
+                }
+            })
+        except Exception as e:
+            logger.error(f"Error sending log to WebSocket {sid}: {e}")
+            traceback.print_exc()
+            disconnected_sids.append(sid)
+    
+    # 清理断开的连接
+    for sid in disconnected_sids:
+        log_websockets.pop(sid, None)
 
 
 async def send_first_time_log(sid):
@@ -2336,6 +2564,9 @@ def run_in_new_thread(coroutine):
 
 if cd_enable_log:
     run_in_new_thread(watch_file_changes(log_file_path, send_logs_to_websocket))
+
+# 启动 ComfyUI 日志监控（始终启用，不需要环境变量）
+run_in_new_thread(watch_comfyui_log_file())
 
 
 # Initialize the upload queue when the module loads

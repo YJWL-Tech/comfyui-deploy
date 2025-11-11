@@ -67,6 +67,7 @@ import { ArrowUpDown, MoreHorizontal, RefreshCw, RotateCw } from "lucide-react";
 import * as React from "react";
 import { useState } from "react";
 import type { z } from "zod";
+import { MachineRealtimeLogs } from "./MachineRealtimeLogs";
 
 export type Machine = MachineType;
 
@@ -238,126 +239,135 @@ export const columns: ColumnDef<Machine>[] = [
       const [queueSettingsOpen, setQueueSettingsOpen] = useState(false);
 
       return (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="h-8 w-8 p-0">
-              <span className="sr-only">Open menu</span>
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel>Actions</DropdownMenuLabel>
-            <DropdownMenuItem
-              className="text-destructive"
-              onClick={async () => {
-                callServerPromise(deleteMachine(machine.id));
-              }}
-            >
-              Delete Machine
-            </DropdownMenuItem>
-            {machine.disabled ? (
-              <DropdownMenuItem
-                onClick={async () => {
-                  callServerPromise(enableMachine(machine.id));
-                }}
-              >
-                Enable Machine
-              </DropdownMenuItem>
-            ) : (
+        <div className="flex items-center gap-2">
+          {machine.type === "classic" && machine.endpoint && (
+            <MachineRealtimeLogs
+              machineId={machine.id}
+              machineName={machine.name}
+              endpoint={machine.endpoint}
+            />
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="h-8 w-8 p-0">
+                <span className="sr-only">Open menu</span>
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Actions</DropdownMenuLabel>
               <DropdownMenuItem
                 className="text-destructive"
                 onClick={async () => {
-                  callServerPromise(disableMachine(machine.id));
+                  callServerPromise(deleteMachine(machine.id));
                 }}
               >
-                Disable Machine
+                Delete Machine
               </DropdownMenuItem>
-            )}
-            {machine.type === "comfy-deploy-serverless" && (
-              <>
-                <DropdownMenuItem asChild>
-                  <a
-                    target="_blank"
-                    href={machine.endpoint.replace(
-                      "comfyui-api",
-                      "comfyui-app"
-                    )} rel="noreferrer"
-                  >
-                    Open ComfyUI
-                  </a>
-                </DropdownMenuItem>
+              {machine.disabled ? (
                 <DropdownMenuItem
-                  onClick={() => {
-                    buildMachine({
-                      id: machine.id,
-                    });
+                  onClick={async () => {
+                    callServerPromise(enableMachine(machine.id));
                   }}
                 >
-                  Rebuild
+                  Enable Machine
                 </DropdownMenuItem>
-              </>
+              ) : (
+                <DropdownMenuItem
+                  className="text-destructive"
+                  onClick={async () => {
+                    callServerPromise(disableMachine(machine.id));
+                  }}
+                >
+                  Disable Machine
+                </DropdownMenuItem>
+              )}
+              {machine.type === "comfy-deploy-serverless" && (
+                <>
+                  <DropdownMenuItem asChild>
+                    <a
+                      target="_blank"
+                      href={machine.endpoint.replace(
+                        "comfyui-api",
+                        "comfyui-app"
+                      )} rel="noreferrer"
+                    >
+                      Open ComfyUI
+                    </a>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      buildMachine({
+                        id: machine.id,
+                      });
+                    }}
+                  >
+                    Rebuild
+                  </DropdownMenuItem>
+                </>
+              )}
+              <DropdownMenuItem onClick={() => setOpen(true)}>
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setQueueSettingsOpen(true)}>
+                Queue Settings
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+            {machine.type === "comfy-deploy-serverless" ? (
+              <UpdateModal
+                dialogClassName="sm:max-w-[600px]"
+                data={machine}
+                open={open}
+                setOpen={setOpen}
+                title="Edit"
+                description="Edit machines"
+                serverAction={updateCustomMachine}
+                formSchema={addCustomMachineSchema}
+                fieldConfig={{
+                  type: {
+                    fieldType: "fallback",
+                    inputProps: {
+                      disabled: true,
+                      showLabel: false,
+                      type: "hidden",
+                    },
+                  },
+                  snapshot: {
+                    fieldType: "snapshot",
+                  },
+                  models: {
+                    fieldType: "models",
+                  },
+                  gpu: {
+                    inputProps: {},
+                  },
+                }}
+              />
+            ) : (
+              <UpdateModal
+                data={machine}
+                open={open}
+                setOpen={setOpen}
+                title="Edit"
+                description="Edit machines"
+                serverAction={updateMachine}
+                formSchema={addMachineSchema}
+                fieldConfig={{
+                  auth_token: {
+                    inputProps: {
+                      type: "password",
+                    },
+                  },
+                }}
+              />
             )}
-            <DropdownMenuItem onClick={() => setOpen(true)}>
-              Edit
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setQueueSettingsOpen(true)}>
-              Queue Settings
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-          {machine.type === "comfy-deploy-serverless" ? (
-            <UpdateModal
-              dialogClassName="sm:max-w-[600px]"
-              data={machine}
-              open={open}
-              setOpen={setOpen}
-              title="Edit"
-              description="Edit machines"
-              serverAction={updateCustomMachine}
-              formSchema={addCustomMachineSchema}
-              fieldConfig={{
-                type: {
-                  fieldType: "fallback",
-                  inputProps: {
-                    disabled: true,
-                    showLabel: false,
-                    type: "hidden",
-                  },
-                },
-                snapshot: {
-                  fieldType: "snapshot",
-                },
-                models: {
-                  fieldType: "models",
-                },
-                gpu: {
-                  inputProps: {},
-                },
-              }}
+            <QueueSettingsDialog
+              machine={machine}
+              open={queueSettingsOpen}
+              setOpen={setQueueSettingsOpen}
             />
-          ) : (
-            <UpdateModal
-              data={machine}
-              open={open}
-              setOpen={setOpen}
-              title="Edit"
-              description="Edit machines"
-              serverAction={updateMachine}
-              formSchema={addMachineSchema}
-              fieldConfig={{
-                auth_token: {
-                  inputProps: {
-                    type: "password",
-                  },
-                },
-              }}
-            />
-          )}
-          <QueueSettingsDialog
-            machine={machine}
-            open={queueSettingsOpen}
-            setOpen={setQueueSettingsOpen}
-          />
-        </DropdownMenu>
+          </DropdownMenu>
+        </div>
       );
     },
   },
