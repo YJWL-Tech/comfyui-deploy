@@ -1,10 +1,10 @@
 {
-    "name": "Comfy Deploy",
-    "og:title": "Comfy Deploy | Stable Diffusion from your terminal to the world",
-    "og:description": "",
-    "author": "BennyKok",
-    "tagline": "Stable Diffusion from your terminal to the world",
-    "description": "From your comfyui workflow to production ready API, flexibility at the speed of thought",
+    "name": "Leapfuture AI Platform",
+    "og:title": "Leapfuture | 智能化AI工作流管理平台",
+    "og:description": "企业级ComfyUI部署与管理解决方案，让AI应用开发更简单高效",
+    "author": "Leapfuture",
+    "tagline": "智能化AI工作流管理平台",
+    "description": "Leapfuture为企业提供专业的ComfyUI工作流部署与管理解决方案。通过我们的平台，您可以轻松将ComfyUI工作流转化为生产就绪的API服务，实现从开发到部署的无缝对接。我们致力于简化AI应用开发流程，提供强大的队列管理、文件存储、模型管理等企业级功能，让您专注于创造价值。",
     "pricingPlan": [
         {
             "name": "Free",
