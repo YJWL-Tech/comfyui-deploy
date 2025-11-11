@@ -5,7 +5,7 @@ import { FileTree } from "./FileTree";
 import { FileList } from "./FileList";
 import { FileUploadDialog } from "./FileUploadDialog";
 import { Button } from "./ui/button";
-import { FolderPlus, Upload } from "lucide-react";
+import { FolderPlus, Upload, User, Globe } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -18,6 +18,7 @@ import {
 } from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
 
 export interface FileItem {
   name: string;
@@ -48,6 +49,7 @@ export function FilesManager() {
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [apiKey, setApiKey] = useState<string>("");
+  const [mode, setMode] = useState<"personal" | "shared">("personal");
 
   // Fetch files and folders
   const fetchFiles = async (path: string) => {
@@ -57,7 +59,7 @@ export function FilesManager() {
 
     setLoading(true);
     try {
-      const url = `/api/files/list?prefix=${encodeURIComponent(path)}`;
+      const url = `/api/files/list?prefix=${encodeURIComponent(path)}&mode=${mode}`;
       const response = await fetch(url, {
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -103,7 +105,7 @@ export function FilesManager() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({ path: folderPath }),
+        body: JSON.stringify({ path: folderPath, mode }),
       });
 
       if (!response.ok) {
@@ -134,7 +136,7 @@ export function FilesManager() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({ key, isFolder }),
+        body: JSON.stringify({ key, isFolder, mode }),
       });
 
       if (!response.ok) {
@@ -158,7 +160,7 @@ export function FilesManager() {
 
     try {
       const response = await fetch(
-        `/api/files/download-url?key=${encodeURIComponent(key)}`,
+        `/api/files/download-url?key=${encodeURIComponent(key)}&mode=${mode}`,
         {
           headers: {
             Authorization: `Bearer ${apiKey}`,
@@ -197,12 +199,33 @@ export function FilesManager() {
     if (apiKey) {
       fetchFiles(currentPath);
     }
-  }, [currentPath, apiKey]);
+  }, [currentPath, apiKey, mode]);
+
+  // Reset path when mode changes
+  useEffect(() => {
+    setCurrentPath("");
+  }, [mode]);
 
   return (
     <div className="flex h-full border rounded-lg overflow-hidden bg-white">
       {/* Left sidebar - File Tree */}
       <div className="w-64 border-r flex flex-col">
+        {/* Mode Switcher */}
+        <div className="p-3 border-b bg-gray-50">
+          <Tabs value={mode} onValueChange={(v) => setMode(v as "personal" | "shared")}>
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="personal" className="text-xs">
+                <User className="w-3 h-3 mr-1" />
+                我的文件
+              </TabsTrigger>
+              <TabsTrigger value="shared" className="text-xs">
+                <Globe className="w-3 h-3 mr-1" />
+                共享目录
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+        
         <div className="p-4 border-b bg-gray-50">
           <div className="flex gap-2">
             <Dialog open={createFolderOpen} onOpenChange={setCreateFolderOpen}>
@@ -252,6 +275,7 @@ export function FilesManager() {
           currentPath={currentPath}
           onPathChange={setCurrentPath}
           apiKey={apiKey}
+          mode={mode}
         />
       </div>
 
@@ -270,6 +294,7 @@ export function FilesManager() {
             currentPath={currentPath}
             onUploadComplete={() => fetchFiles(currentPath)}
             apiKey={apiKey}
+            mode={mode}
             trigger={
               <Button>
                 <Upload className="w-4 h-4 mr-2" />
@@ -287,6 +312,7 @@ export function FilesManager() {
           onFolderClick={(prefix) => setCurrentPath(prefix)}
           currentPath={currentPath}
           apiKey={apiKey}
+          mode={mode}
         />
       </div>
     </div>

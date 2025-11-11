@@ -50,6 +50,7 @@ interface FileListProps {
   onFolderClick: (prefix: string) => void;
   currentPath: string;
   apiKey: string;
+  mode: "personal" | "shared";
 }
 
 export function FileList({
@@ -61,6 +62,7 @@ export function FileList({
   onFolderClick,
   currentPath,
   apiKey,
+  mode,
 }: FileListProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<{
@@ -116,7 +118,7 @@ export function FileList({
 
       // 获取下载URL
       const response = await fetch(
-        `/api/files/download-url?key=${encodeURIComponent(file.key)}`,
+        `/api/files/download-url?key=${encodeURIComponent(file.key)}&mode=${mode}`,
         {
           headers: {
             Authorization: `Bearer ${apiKey}`,

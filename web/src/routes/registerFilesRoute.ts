@@ -39,6 +39,7 @@ const listFilesRoute = createRoute({
   request: {
     query: z.object({
       prefix: z.string().optional().default(""),
+      mode: z.enum(["personal", "shared"]).optional().default("personal"),
     }),
   },
   responses: {
@@ -89,6 +90,7 @@ const createFolderRoute = createRoute({
         "application/json": {
           schema: z.object({
             path: z.string(),
+            mode: z.enum(["personal", "shared"]).optional().default("personal"),
           }),
         },
       },
@@ -134,6 +136,7 @@ const deleteFileRoute = createRoute({
           schema: z.object({
             key: z.string(),
             isFolder: z.boolean().optional(),
+            mode: z.enum(["personal", "shared"]).optional().default("personal"),
           }),
         },
       },
@@ -178,6 +181,7 @@ const generateUploadUrlRoute = createRoute({
           schema: z.object({
             key: z.string(),
             contentType: z.string(),
+            mode: z.enum(["personal", "shared"]).optional().default("personal"),
           }),
         },
       },
@@ -219,6 +223,7 @@ const getDownloadUrlRoute = createRoute({
   request: {
     query: z.object({
       key: z.string(),
+      mode: z.enum(["personal", "shared"]).optional().default("personal"),
     }),
   },
   responses: {
@@ -251,7 +256,7 @@ export const registerFilesRoute = (app: App) => {
 
   // List files and folders
   app.openapi(listFilesRoute, async (c) => {
-    const { prefix } = c.req.valid("query");
+    const { prefix, mode } = c.req.valid("query");
     const tokenData = c.get("apiKeyTokenData");
 
     if (!tokenData?.user_id) {
@@ -262,17 +267,24 @@ export const registerFilesRoute = (app: App) => {
     }
 
     try {
-      // Add user_id to prefix to isolate user files
-      // Ensure the prefix ends with / if not empty, so we list contents of the folder
+      // Normalize prefix
       let normalizedPrefix = prefix.replace(/^\/+/, "").replace(/\/+$/, "");
       if (normalizedPrefix) {
         normalizedPrefix += "/";
       }
-      const userPrefix = `files/${tokenData.user_id}/${normalizedPrefix}`;
+
+      // Determine the actual prefix based on mode
+      const actualPrefix = mode === "personal" 
+        ? `files/${tokenData.user_id}/${normalizedPrefix}`
+        : normalizedPrefix;
+      
+      const basePrefixToRemove = mode === "personal" 
+        ? `files/${tokenData.user_id}/`
+        : "";
       
       const command = new ListObjectsV2Command({
         Bucket: bucket,
-        Prefix: userPrefix,
+        Prefix: actualPrefix,
         Delimiter: "/",
       });
 
@@ -282,11 +294,13 @@ export const registerFilesRoute = (app: App) => {
       const folders = (response.CommonPrefixes || [])
         .map((prefix) => {
           const fullPrefix = prefix.Prefix!;
-          const afterUserPrefix = fullPrefix.replace(userPrefix, "");
-          const withoutTrailingSlash = afterUserPrefix.replace(/\/+$/, "");
+          const afterBasePrefix = basePrefixToRemove 
+            ? fullPrefix.replace(basePrefixToRemove, "")
+            : fullPrefix;
+          const withoutTrailingSlash = afterBasePrefix.replace(/\/+$/, "");
           const segments = withoutTrailingSlash.split("/").filter(Boolean);
           const name = segments.pop() || "";
-          const prefixResult = fullPrefix.replace(`files/${tokenData.user_id}/`, "").replace(/\/+$/, "");
+          const prefixResult = afterBasePrefix.replace(/\/+$/, "");
           
           return {
             name,
@@ -299,16 +313,19 @@ export const registerFilesRoute = (app: App) => {
       const files = (response.Contents || [])
         .filter((item) => {
           // Filter out folder markers (keys ending with /)
-          if (item.Key === userPrefix) return false;
+          if (item.Key === actualPrefix) return false;
           if (item.Key!.endsWith("/")) return false;
           return true;
         })
         .map((item) => {
           const pathSegments = item.Key!.split("/").filter(Boolean);
           const name = pathSegments[pathSegments.length - 1] || item.Key!;
+          const key = basePrefixToRemove 
+            ? item.Key!.replace(basePrefixToRemove, "")
+            : item.Key!;
           return {
             name,
-            key: item.Key!.replace(`files/${tokenData.user_id}/`, ""),
+            key,
             size: item.Size || 0,
             lastModified: item.LastModified?.toISOString() || "",
           };
@@ -337,7 +354,7 @@ export const registerFilesRoute = (app: App) => {
 
   // Create folder
   app.openapi(createFolderRoute, async (c) => {
-    const { path } = c.req.valid("json");
+    const { path, mode } = c.req.valid("json");
     const tokenData = c.get("apiKeyTokenData");
 
     if (!tokenData?.user_id) {
@@ -354,8 +371,10 @@ export const registerFilesRoute = (app: App) => {
         .replace(/\/+$/, "") // Remove trailing slashes
         .replace(/\/+/g, "/"); // Collapse multiple slashes to single slash
       
-      // Add user_id to path and ensure it ends with /
-      const folderKey = `files/${tokenData.user_id}/${normalizedPath}/`;
+      // Determine folder key based on mode
+      const folderKey = mode === "personal"
+        ? `files/${tokenData.user_id}/${normalizedPath}/`
+        : `${normalizedPath}/`;
 
       const command = new PutObjectCommand({
         Bucket: bucket,
@@ -387,7 +406,7 @@ export const registerFilesRoute = (app: App) => {
 
   // Delete file or folder
   app.openapi(deleteFileRoute, async (c) => {
-    const { key, isFolder } = c.req.valid("json");
+    const { key, isFolder, mode } = c.req.valid("json");
     const tokenData = c.get("apiKeyTokenData");
 
     if (!tokenData?.user_id) {
@@ -403,7 +422,9 @@ export const registerFilesRoute = (app: App) => {
         .replace(/^\/+/, "")
         .replace(/\/+/g, "/");
       
-      const fullKey = `files/${tokenData.user_id}/${normalizedKey}`;
+      const fullKey = mode === "personal"
+        ? `files/${tokenData.user_id}/${normalizedKey}`
+        : normalizedKey;
 
       if (isFolder) {
         // List all objects with this prefix
@@ -456,7 +477,7 @@ export const registerFilesRoute = (app: App) => {
 
   // Generate upload URL
   app.openapi(generateUploadUrlRoute, async (c) => {
-    const { key, contentType } = c.req.valid("json");
+    const { key, contentType, mode } = c.req.valid("json");
     const tokenData = c.get("apiKeyTokenData");
 
     if (!tokenData?.user_id) {
@@ -472,7 +493,9 @@ export const registerFilesRoute = (app: App) => {
         .replace(/^\/+/, "")
         .replace(/\/+/g, "/");
       
-      const fullKey = `files/${tokenData.user_id}/${normalizedKey}`;
+      const fullKey = mode === "personal"
+        ? `files/${tokenData.user_id}/${normalizedKey}`
+        : normalizedKey;
 
       const command = new PutObjectCommand({
         Bucket: bucket,
@@ -506,7 +529,7 @@ export const registerFilesRoute = (app: App) => {
 
   // Get download URL
   app.openapi(getDownloadUrlRoute, async (c) => {
-    const { key } = c.req.valid("query");
+    const { key, mode } = c.req.valid("query");
     const tokenData = c.get("apiKeyTokenData");
 
     if (!tokenData?.user_id) {
@@ -522,7 +545,9 @@ export const registerFilesRoute = (app: App) => {
         .replace(/^\/+/, "")
         .replace(/\/+/g, "/");
       
-      const fullKey = `files/${tokenData.user_id}/${normalizedKey}`;
+      const fullKey = mode === "personal"
+        ? `files/${tokenData.user_id}/${normalizedKey}`
+        : normalizedKey;
 
       const command = new GetObjectCommand({
         Bucket: bucket,

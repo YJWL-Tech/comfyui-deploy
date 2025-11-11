@@ -19,6 +19,7 @@ interface FileUploadDialogProps {
   currentPath: string;
   onUploadComplete: () => void;
   apiKey: string;
+  mode: "personal" | "shared";
   trigger: React.ReactNode;
 }
 
@@ -33,6 +34,7 @@ export function FileUploadDialog({
   currentPath,
   onUploadComplete,
   apiKey,
+  mode,
   trigger,
 }: FileUploadDialogProps) {
   const [open, setOpen] = useState(false);
@@ -81,6 +83,7 @@ export function FileUploadDialog({
         body: JSON.stringify({
           key: fileKey,
           contentType: uploadFile.file.type || "application/octet-stream",
+          mode,
         }),
       });
 

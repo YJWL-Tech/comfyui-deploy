@@ -11,6 +11,7 @@ interface FileTreeProps {
   currentPath: string;
   onPathChange: (path: string) => void;
   apiKey: string;
+  mode: "personal" | "shared";
 }
 
 interface TreeNode {
@@ -26,21 +27,15 @@ export function FileTree({
   currentPath,
   onPathChange,
   apiKey,
+  mode,
 }: FileTreeProps) {
   const [rootFolders, setRootFolders] = useState<TreeNode[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Load root folders on mount
-  useEffect(() => {
-    if (apiKey) {
-      loadFolders("");
-    }
-  }, [apiKey]);
-
   // Load folders for a given path
   const loadFolders = async (path: string): Promise<FolderItem[]> => {
     try {
-      const url = `/api/files/list?prefix=${encodeURIComponent(path)}`;
+      const url = `/api/files/list?prefix=${encodeURIComponent(path)}&mode=${mode}`;
       const response = await fetch(url, {
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -78,7 +73,7 @@ export function FileTree({
       setLoading(false);
     };
     loadRoot();
-  }, [apiKey]);
+  }, [apiKey, mode]);
 
   // Toggle folder expansion
   const toggleFolder = async (nodePrefix: string) => {
