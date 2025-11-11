@@ -42,6 +42,10 @@ export function NavbarMenu({
       path: "/queue",
     },
     {
+      name: "Files",
+      path: "/files",
+    },
+    {
       name: "API Keys",
       path: "/api-keys",
     },
