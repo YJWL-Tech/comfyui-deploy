@@ -24,7 +24,7 @@ export function NavbarMenu({
   const pathnames = usePathname();
   const pathname = `/${pathnames.split("/")[1]}`;
 
-  const pages = [
+    const pages = [
     {
       name: "Workflows",
       path: "/workflows",
@@ -44,6 +44,10 @@ export function NavbarMenu({
     {
       name: "Files",
       path: "/files",
+    },
+    {
+      name: "Notifications",
+      path: "/notifications",
     },
     {
       name: "API Keys",

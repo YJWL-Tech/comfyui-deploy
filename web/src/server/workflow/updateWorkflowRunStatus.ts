@@ -228,6 +228,23 @@ export async function updateWorkflowRunStatus(
         // 只在状态首次变为success/failed时减少，避免重复减少
         if (isCompleting && workflowRun?.machine_id) {
             await decrementMachineQueue(workflowRun.machine_id);
+            
+            // 发送异步通知（webhook）
+            try {
+                const { sendWebhookNotification, buildWebhookPayload } = await import("@/server/notifications/webhook-notifier");
+                const payload = await buildWebhookPayload(
+                    run_id,
+                    status,
+                    status === "failed" ? "Workflow execution failed" : undefined
+                );
+                // 异步发送，不阻塞主流程
+                sendWebhookNotification(payload).catch(err => {
+                    console.error(`[Webhook] Failed to send notification for run ${run_id}:`, err);
+                });
+            } catch (error) {
+                console.error(`[Webhook] Error setting up notification for run ${run_id}:`, error);
+                // 不抛出错误，避免影响主流程
+            }
         }
     }
 }

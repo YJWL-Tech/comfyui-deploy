@@ -12,6 +12,8 @@
     "worker": "tsx src/worker/queue-worker.ts",
     "worker:dev": "tsx watch src/worker/queue-worker.ts",
     "worker:check": "node check-worker.js",
+    "notification-worker": "tsx src/worker/notification-worker.ts",
+    "notification-worker:dev": "tsx watch src/worker/notification-worker.ts",
     "migrate-production": "bun run migrate.mts",
     "migrate-local": "SSL=false LOCAL=true bun run migrate.mts",
     "db-up": "docker-compose up",

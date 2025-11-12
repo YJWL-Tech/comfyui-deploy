@@ -60,6 +60,22 @@ export async function initializeWorkerAndChecker() {
                 console.log('ℹ️  [MANUAL-INIT] Worker disabled (ENABLE_WORKER_IN_NEXTJS not set to true)');
             }
 
+            // 初始化 Notification Worker（如果启用）
+            if (process.env.ENABLE_NOTIFICATION_WORKER_IN_NEXTJS === 'true') {
+                if (!process.env.VERCEL && !process.env.NETLIFY && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
+                    try {
+                        console.log('📦 [MANUAL-INIT] Loading integrated notification worker...');
+                        const { startNotificationWorker } = await import('../worker/notification-worker-integrated');
+                        startNotificationWorker();
+                        console.log('✅ [MANUAL-INIT] Notification Worker initialized');
+                    } catch (error) {
+                        console.error('❌ [MANUAL-INIT] Failed to initialize notification worker:', error);
+                    }
+                } else {
+                    console.log('⚠️  [MANUAL-INIT] Skipping notification worker in serverless environment');
+                }
+            }
+
 
             console.log('='.repeat(60));
             console.log('✅ [MANUAL-INIT] Initialization completed');
