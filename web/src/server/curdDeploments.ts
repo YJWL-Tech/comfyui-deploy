@@ -2,7 +2,7 @@
 
 import { db } from "@/db/db";
 import type { DeploymentType, publicShareDeployment } from "@/db/schema";
-import { deploymentsTable, workflowTable } from "@/db/schema";
+import { deploymentsTable, workflowTable, workflowVersionTable } from "@/db/schema";
 import { createNewWorkflow } from "@/server/createNewWorkflow";
 import { addCustomMachine } from "@/server/curdMachine";
 import { withServerPromise } from "@/server/withServerPromise";
@@ -15,6 +15,7 @@ import { redirect } from "next/navigation";
 import "server-only";
 import { validate as isValidUUID } from "uuid";
 import type { z } from "zod";
+import { getWorkflowConfig } from "@/lib/getWorkflowConfig";
 export async function createDeployments(
   workflow_id: string,
   version_id: string,
@@ -35,6 +36,18 @@ export async function createDeployments(
     throw new Error("Either machine_id or machine_group_id must be provided");
   }
 
+  // 获取workflow version来生成config
+  const workflowVersion = await db.query.workflowVersionTable.findFirst({
+    where: eq(workflowVersionTable.id, version_id),
+  });
+
+  if (!workflowVersion) {
+    throw new Error("Workflow version not found");
+  }
+
+  // 生成config
+  const config = getWorkflowConfig(workflowVersion);
+
   // Same environment and same workflow
   const existingDeployment = await db.query.deploymentsTable.findFirst({
     where: and(
@@ -52,6 +65,7 @@ export async function createDeployments(
         machine_id: machine_id || null,
         machine_group_id: machine_group_id || null,
         org_id: orgId,
+        config: config,
       })
       .where(eq(deploymentsTable.id, existingDeployment.id));
   } else {
@@ -84,6 +98,7 @@ export async function createDeployments(
       machine_group_id: machine_group_id || null,
       environment,
       org_id: orgId,
+      config: config,
       // only create share slug if this is public share
       share_slug: environment == "public-share" ? slugify(`${userName} ${workflow.name}`) : null
     });

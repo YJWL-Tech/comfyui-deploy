@@ -97,6 +97,102 @@ const clientTemplate_checkStatus = `
 const run = await client.getRun(run_id);
 `;
 
+const clientTemplate_outputExample = `
+// Access outputs from the run
+if (run.status === "success" && run.outputs) {
+  run.outputs.forEach((output) => {
+    // Handle image outputs
+    if (output.data?.images) {
+      output.data.images.forEach((image: any) => {
+        console.log("Image URL:", image.url);
+        console.log("Image filename:", image.filename);
+      });
+    }
+    // Handle file outputs
+    if (output.data?.files) {
+      output.data.files.forEach((file: any) => {
+        console.log("File URL:", file.url);
+        console.log("File filename:", file.filename);
+      });
+    }
+    // Handle text outputs
+    if (output.data?.text) {
+      console.log("Text output:", output.data.text);
+    }
+  });
+}
+`;
+
+const jsTemplate_outputExample = `
+// Access outputs from the response
+const runData = await fetch("<URL>?run_id=" + run_id, {
+  method: "GET",
+  headers: {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer " + process.env.COMFY_DEPLOY_API_KEY,
+  },
+}).then(response => response.json());
+
+if (runData.status === "success" && runData.outputs) {
+  runData.outputs.forEach((outputItem) => {
+    // Handle image outputs
+    if (outputItem.data?.images) {
+      outputItem.data.images.forEach((image) => {
+        console.log("Image URL:", image.url);
+        console.log("Image filename:", image.filename);
+      });
+    }
+    // Handle file outputs
+    if (outputItem.data?.files) {
+      outputItem.data.files.forEach((file) => {
+        console.log("File URL:", file.url);
+        console.log("File filename:", file.filename);
+      });
+    }
+    // Handle text outputs
+    if (outputItem.data?.text) {
+      console.log("Text output:", outputItem.data.text);
+    }
+  });
+}
+`;
+
+const curlTemplate_outputExample = `
+# The response will contain outputs array with CDN URLs
+# Example response structure:
+# {
+#   "status": "success",
+#   "outputs": [
+#     {
+#       "data": {
+#         "images": [
+#           {
+#             "url": "https://cdn.example.com/bucket/outputs/runs/{run_id}/{filename}",
+#             "filename": "image_001.png"
+#           }
+#         ],
+#         "files": [{"url": "...", "filename": "..."}],
+#         "text": "..."
+#       }
+#     }
+#   ]
+# }
+
+# The image.url is a public CDN URL that can be:
+# 1. Used directly in HTML: <img src="{image.url}" />
+# 2. Referenced in markdown: ![alt]({image.url})
+# 3. Embedded in other applications
+# 4. Shared via direct link
+
+# Example: Get the image URL
+IMAGE_URL=$(curl -X GET "<URL>?run_id={run_id}" \\
+  -H "Authorization: Bearer $COMFY_DEPLOY_API_KEY" \\
+  | jq -r '.outputs[0].data.images[0].url')
+
+echo "Image URL: $IMAGE_URL"
+# Use the URL in your application
+`;
+
 function SharePageDeploymentButton({
   deployment,
   domain,
@@ -293,6 +389,15 @@ function DeploymentCodeDialog({
                   domain,
                 )}
               />
+              Access outputs from the run
+              <CodeBlock
+                lang="js"
+                code={formatCode(
+                  clientTemplate_outputExample,
+                  deployment,
+                  domain,
+                )}
+              />
             </TabsContent>
             <TabsContent className="flex flex-col gap-2 !mt-0" value="js">
               Trigger the workflow
@@ -305,6 +410,11 @@ function DeploymentCodeDialog({
                 lang="js"
                 code={formatCode(jsTemplate_checkStatus, deployment, domain)}
               />
+              Access outputs from the response
+              <CodeBlock
+                lang="js"
+                code={formatCode(jsTemplate_outputExample, deployment, domain)}
+              />
             </TabsContent>
             <TabsContent className="flex flex-col gap-2 !mt-2" value="curl">
               <CodeBlock
@@ -314,6 +424,11 @@ function DeploymentCodeDialog({
               <CodeBlock
                 lang="bash"
                 code={formatCode(curlTemplate_checkStatus, deployment, domain)}
+              />
+              Output structure example
+              <CodeBlock
+                lang="bash"
+                code={formatCode(curlTemplate_outputExample, deployment, domain)}
               />
             </TabsContent>
           </Tabs>

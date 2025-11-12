@@ -274,6 +274,13 @@
       "when": 1762830422672,
       "tag": "0038_elite_blizzard",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "5",
+      "when": 1762913075426,
+      "tag": "0039_luxuriant_warpath",
+      "breakpoints": true
     }
   ]
 }

@@ -295,6 +295,23 @@ export const showcaseMediaNullable = z
   )
   .nullable();
 
+export const deploymentConfigType = z.object({
+  inputs: z.array(
+    z.object({
+      class_type: z.string(),
+      input_id: z.string(),
+      default_value: z.any(),
+    })
+  ),
+  outputs: z.array(
+    z.object({
+      class_type: z.string(),
+      output_id: z.string(),
+      type: z.string(),
+    })
+  ),
+});
+
 export const deploymentsTable = dbSchema.table("deployments", {
   id: uuid("id").primaryKey().defaultRandom().notNull(),
   user_id: text("user_id")
@@ -320,6 +337,7 @@ export const deploymentsTable = dbSchema.table("deployments", {
   description: text("description"),
   showcase_media:
     jsonb("showcase_media").$type<z.infer<typeof showcaseMedia>>(),
+  config: jsonb("config").$type<z.infer<typeof deploymentConfigType>>(),
   environment: deploymentEnvironment("environment").notNull(),
   created_at: timestamp("created_at").defaultNow().notNull(),
   updated_at: timestamp("updated_at").defaultNow().notNull(),

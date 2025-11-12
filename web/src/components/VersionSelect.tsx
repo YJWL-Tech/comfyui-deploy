@@ -371,12 +371,13 @@ export function CreateDeploymentButton({
   const [selectedGroup, setSelectedGroup] = useState<string>("");
   const [useGroup, setUseGroup] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [open, setOpen] = useState(false);
   const workflow_version_id = workflow?.versions.find(
     (x) => x.version === version,
   )?.id;
 
   return (
-    <Dialog>
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button className="gap-2" disabled={isLoading} variant="outline">
           Deploy {isLoading ? <LoadingIcon /> : <MoreVertical size={14} />}
@@ -441,16 +442,20 @@ export function CreateDeploymentButton({
                 if (!useGroup && !machine) return;
 
                 setIsLoading(true);
-                await callServerPromise(
-                  createDeployments(
-                    workflow.id,
-                    workflow_version_id,
-                    useGroup ? null : machine,
-                    useGroup ? selectedGroup : null,
-                    "production",
-                  ),
-                );
-                setIsLoading(false);
+                try {
+                  await callServerPromise(
+                    createDeployments(
+                      workflow.id,
+                      workflow_version_id,
+                      useGroup ? null : machine,
+                      useGroup ? selectedGroup : null,
+                      "production",
+                    ),
+                  );
+                  setOpen(false);
+                } finally {
+                  setIsLoading(false);
+                }
               }}
               disabled={isLoading || (useGroup ? !selectedGroup : !machine)}
             >
@@ -463,16 +468,20 @@ export function CreateDeploymentButton({
                 if (!machine) return; // Staging只能使用machine
 
                 setIsLoading(true);
-                await callServerPromise(
-                  createDeployments(
-                    workflow.id,
-                    workflow_version_id,
-                    machine,
-                    null,
-                    "staging",
-                  ),
-                );
-                setIsLoading(false);
+                try {
+                  await callServerPromise(
+                    createDeployments(
+                      workflow.id,
+                      workflow_version_id,
+                      machine,
+                      null,
+                      "staging",
+                    ),
+                  );
+                  setOpen(false);
+                } finally {
+                  setIsLoading(false);
+                }
               }}
               disabled={isLoading || !machine}
             >
