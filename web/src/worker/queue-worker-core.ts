@@ -209,6 +209,55 @@ export async function processQueueJob({
         const duration = Date.now() - startTime;
         logError(`❌ [JOB ${job.id}] Failed to create workflow run after ${duration}ms:`, error);
         logError(`   Error details:`, error instanceof Error ? error.message : String(error));
+
+        // 检查是否有 workflow_run 记录（createRun 可能在创建记录后失败）
+        // 通过 queue_job_id 查找可能的 workflow_run 记录
+        try {
+            const { workflowRunsTable } = await import("@/db/schema");
+            const existingRun = await db.query.workflowRunsTable.findFirst({
+                where: eq(workflowRunsTable.queue_job_id, job.id!),
+                columns: {
+                    id: true,
+                    status: true,
+                },
+            });
+
+            if (existingRun && existingRun.status !== "failed") {
+                log(`📝 [JOB ${job.id}] Found workflow_run record ${existingRun.id}, updating status to failed...`);
+                const errorMessage = error instanceof Error ? error.message : String(error);
+
+                // 更新状态为失败
+                await db
+                    .update(workflowRunsTable)
+                    .set({
+                        status: "failed",
+                        ended_at: new Date(),
+                    })
+                    .where(eq(workflowRunsTable.id, existingRun.id));
+
+                // 发送失败通知
+                try {
+                    const { sendWebhookNotification, buildWebhookPayload } = await import("@/server/notifications/webhook-notifier");
+                    const payload = await buildWebhookPayload(
+                        existingRun.id,
+                        "failed",
+                        errorMessage,
+                    );
+                    // 异步发送，不阻塞主流程
+                    sendWebhookNotification(payload).catch(err => {
+                        logError(`[JOB ${job.id}] Failed to send notification for run ${existingRun.id}:`, err);
+                    });
+                    log(`✅ [JOB ${job.id}] Notification sent for failed run ${existingRun.id}`);
+                } catch (notificationError) {
+                    logError(`[JOB ${job.id}] Error setting up notification for run ${existingRun.id}:`, notificationError);
+                    // 不抛出错误，避免影响主流程
+                }
+            }
+        } catch (dbError) {
+            logError(`[JOB ${job.id}] Error checking for workflow_run record:`, dbError);
+            // 不抛出错误，继续执行清理逻辑
+        }
+
         // 如果启动失败，立即减少队列计数
         log(`📉 [JOB ${job.id}] Decrementing machine queue count due to failure...`);
         await decrementMachineQueue(selectedMachine.id);

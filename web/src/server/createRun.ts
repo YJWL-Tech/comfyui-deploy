@@ -234,12 +234,32 @@ export const createRun = withServerPromise(
       }
     } catch (e) {
       console.error(e);
+      const errorMessage = e instanceof Error ? e.message : String(e);
       await db
         .update(workflowRunsTable)
         .set({
           status: "failed",
+          ended_at: new Date(),
         })
         .where(eq(workflowRunsTable.id, workflow_run[0].id));
+
+      // 发送失败通知
+      try {
+        const { sendWebhookNotification, buildWebhookPayload } = await import("@/server/notifications/webhook-notifier");
+        const payload = await buildWebhookPayload(
+          workflow_run[0].id,
+          "failed",
+          errorMessage,
+        );
+        // 异步发送，不阻塞主流程
+        sendWebhookNotification(payload).catch(err => {
+          console.error(`[createRun] Failed to send notification for run ${workflow_run[0].id}:`, err);
+        });
+      } catch (notificationError) {
+        console.error(`[createRun] Error setting up notification for run ${workflow_run[0].id}:`, notificationError);
+        // 不抛出错误，避免影响主流程
+      }
+
       throw e;
     }
 
