@@ -101,6 +101,35 @@ export const createRun = withServerPromise(
 
     const workflow_api = workflow_version_data.workflow_api;
 
+    // Note: workflow_version_data.workflow is the relation to workflowTable (contains org_id, user_id)
+    // We need to get the actual workflow JSON from workflowVersionTable
+    // Since the relation name "workflow" overrides the column, we need to query it separately
+    let workflowJson = null;
+    if (typeof workflow_version_id === "string") {
+      const versionWithWorkflow = await db.query.workflowVersionTable.findFirst({
+        where: eq(workflowVersionTable.id, workflow_version_id),
+        columns: {
+          workflow: true,
+        },
+      });
+      workflowJson = versionWithWorkflow?.workflow ?? null;
+    } else {
+      // If workflow_version_id is already a WorkflowVersionType object, it might have the workflow field
+      // but we need to be careful about the relation override
+      workflowJson = (workflow_version_id as any).workflow;
+      // Check if it's actually the workflow JSON (should have 'nodes' key) or the relation object
+      if (workflowJson && typeof workflowJson === 'object' && !('nodes' in workflowJson)) {
+        // It's the relation object, not the workflow JSON - query it separately
+        const versionWithWorkflow = await db.query.workflowVersionTable.findFirst({
+          where: eq(workflowVersionTable.id, workflow_version_id.id),
+          columns: {
+            workflow: true,
+          },
+        });
+        workflowJson = versionWithWorkflow?.workflow ?? null;
+      }
+    }
+
     // Replace the inputs
     if (inputs && workflow_api) {
       for (const key in inputs) {
@@ -120,6 +149,7 @@ export const createRun = withServerPromise(
     let prompt_id: string | undefined = undefined;
     const shareData = {
       workflow_api_raw: workflow_api,
+      workflow: workflowJson,
       status_endpoint: `${origin}/api/update-run`,
       file_upload_endpoint: `${origin}/api/file-upload`,
     };

@@ -381,6 +381,15 @@ def apply_random_seed_to_workflow(workflow_api, workflow):
                     False  # Add a flag to track if we should skip randomization
                 )
 
+                # Skip workflow node check if workflow is None or doesn't have nodes
+                if workflow is None or "nodes" not in workflow:
+                    # Just apply random seed without checking node type
+                    workflow_api[key]["inputs"]["seed"] = randomSeed()
+                    logger.info(
+                        f"Applied random seed {workflow_api[key]['inputs']['seed']} to {workflow_api[key]['class_type']} (no workflow info)"
+                    )
+                    continue
+
                 for node in workflow["nodes"]:
                     if str(node["id"]) == node_id and node["type"] == "KSampler":
                         # Check if this node has widgets_values and if seed setting is not "fixed"
@@ -458,6 +467,11 @@ def apply_random_seed_to_workflow(workflow_api, workflow):
 
 
 def apply_inputs_to_workflow(workflow_api: Any, inputs: Any, sid: str = None):
+    # Early return if workflow_api is None
+    if workflow_api is None:
+        logger.warning("workflow_api is None, skipping input application")
+        return
+    
     # Loop through each of the inputs and replace them
     for key, value in workflow_api.items():
         if "inputs" in value:
