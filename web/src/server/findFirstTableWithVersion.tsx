@@ -17,7 +17,7 @@ export async function findFirstTableWithVersion(workflow_id: string) {
   });
 }
 
-export function findWorkflowById(workflow_id: string) {
+export async function findWorkflowById(workflow_id: string) {
   const { userId, orgId } = await auth();
   if (!userId) throw new Error("No auth");
 
