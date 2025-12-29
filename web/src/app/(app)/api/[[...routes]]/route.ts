@@ -58,13 +58,28 @@ app.use("/run", checkAuth);
 app.use("/upload-url", checkAuth);
 app.use("/queue/*", checkAuth);
 
+// 全局 CORS 配置 - 允许所有来源（因为 ComfyUI 可能从任意域名访问）
+// 注意：credentials 必须为 false，否则 origin 不能为 "*"
 const corsHandler = cors({
   origin: "*",
   allowHeaders: ["Authorization", "Content-Type"],
   allowMethods: ["POST", "GET", "OPTIONS", "PATCH", "DELETE"],
   exposeHeaders: ["Content-Length"],
   maxAge: 600,
-  credentials: true,
+  credentials: false,
+});
+
+// 全局 OPTIONS 预检请求处理 - 放在所有路由之前
+app.options("*", (c) => {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      "Access-Control-Max-Age": "600",
+    },
+  });
 });
 
 // CORS Check

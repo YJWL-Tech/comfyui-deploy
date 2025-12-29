@@ -43,6 +43,20 @@ export async function middleware(request: NextRequest) {
 
   // API 路由特殊处理
   if (pathname.startsWith("/api/")) {
+    // 🔧 重要：OPTIONS 预检请求直接返回 CORS 头，不做认证检查
+    // 这是为了支持从 ComfyUI 浏览器端的跨域请求
+    if (request.method === "OPTIONS") {
+      return new NextResponse(null, {
+        status: 204,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          "Access-Control-Max-Age": "600",
+        },
+      });
+    }
+
     // 允许公开的 API 路由（ComfyUI 回调端点不需要认证）
     if (
       pathname.startsWith("/api/auth") ||
