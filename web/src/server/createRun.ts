@@ -35,14 +35,20 @@ export const createRun = withServerPromise(
     apiUser?: APIKeyUserType;
     queueJobId?: string; // 队列任务的 job_id
   }) => {
+    // 🔧 关键修复：优先使用 API_URL 环境变量，而不是客户端传入的 origin
+    // 客户端传入的 origin 是 window.location.origin（用户访问网页的地址）
+    // 但回调地址应该是 API_URL（ComfyUI 能访问到的内网地址）
+    const effectiveOrigin = process.env.API_URL || origin;
+
     console.log(`\n${"=".repeat(60)}`);
     console.log(`[createRun] 🚀 Starting workflow run creation...`);
     console.log(`[createRun] 🔧 Environment Check:`);
     console.log(`[createRun]    - process.env.API_URL = "${process.env.API_URL || '(not set)'}"`);
     console.log(`[createRun]    - Received origin param = "${origin}"`);
+    console.log(`[createRun]    - ✅ Using effective origin = "${effectiveOrigin}"`);
     console.log(`[createRun] 📍 Callback URLs will be:`);
-    console.log(`[createRun]    - status_endpoint: ${origin}/api/update-run`);
-    console.log(`[createRun]    - file_upload_endpoint: ${origin}/api/file-upload`);
+    console.log(`[createRun]    - status_endpoint: ${effectiveOrigin}/api/update-run`);
+    console.log(`[createRun]    - file_upload_endpoint: ${effectiveOrigin}/api/file-upload`);
     console.log(`[createRun] 📋 Run Origin: ${runOrigin || 'not specified'}`);
     console.log(`[createRun] 📋 Queue Job ID: ${queueJobId || 'not specified'}`);
     if (inputs) {
@@ -168,8 +174,8 @@ export const createRun = withServerPromise(
     const shareData = {
       workflow_api_raw: workflow_api,
       workflow: workflowJson,
-      status_endpoint: `${origin}/api/update-run`,
-      file_upload_endpoint: `${origin}/api/file-upload`,
+      status_endpoint: `${effectiveOrigin}/api/update-run`,
+      file_upload_endpoint: `${effectiveOrigin}/api/file-upload`,
     };
 
     prompt_id = v4();
@@ -354,7 +360,7 @@ export const createRun = withServerPromise(
 
     console.log(`\n[createRun] 🎉 Workflow run created successfully!`);
     console.log(`[createRun]    - Run ID: ${workflow_run[0].id}`);
-    console.log(`[createRun]    - ComfyUI will callback to: ${origin}`);
+    console.log(`[createRun]    - ComfyUI will callback to: ${effectiveOrigin}`);
     console.log(`${"=".repeat(60)}\n`);
 
     return {
