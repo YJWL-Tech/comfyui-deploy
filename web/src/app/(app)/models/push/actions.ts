@@ -141,12 +141,12 @@ async function triggerMachineDownloads(
   });
 
   // 获取当前服务器的 API URL
-  // 优先级：NEXT_PUBLIC_APP_URL > API_URL > 从请求头获取
+  // 优先级：API_URL > NEXT_PUBLIC_APP_URL > 从请求头获取
   let apiUrl: string;
-  if (process.env.NEXT_PUBLIC_APP_URL) {
-    apiUrl = process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "");
-  } else if (process.env.API_URL) {
+  if (process.env.API_URL) {
     apiUrl = process.env.API_URL.replace(/\/$/, "");
+  } else if (process.env.NEXT_PUBLIC_APP_URL) {
+    apiUrl = process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "");
   } else {
     const headersList = await headers();
     const host = headersList.get("host") || "";
