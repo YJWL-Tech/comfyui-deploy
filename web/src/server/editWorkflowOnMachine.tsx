@@ -21,9 +21,14 @@ export const editWorkflowOnMachine = withServerPromise(
     console.log(`[editWorkflowOnMachine]    - userId: ${userId}`);
     console.log(`[editWorkflowOnMachine]    - orgId: ${orgId}`);
 
-    // 优先使用 API_URL 环境变量，作为 origin（ComfyUI 机器需要能访问到）
+    // 优先级：EDIT_ORIGIN_URL > API_URL > 请求头
+    // EDIT_ORIGIN_URL: 专门用于 Edit Workflow，必须是浏览器可访问的公网地址
+    // API_URL: 通用 API 地址，可能是内网地址（用于服务器端回调）
     let domain: string;
-    if (process.env.API_URL) {
+    if (process.env.EDIT_ORIGIN_URL) {
+      domain = process.env.EDIT_ORIGIN_URL.replace(/\/$/, "");
+      console.log(`[editWorkflowOnMachine] 🌐 Domain (from EDIT_ORIGIN_URL env - highest priority): ${domain}`);
+    } else if (process.env.API_URL) {
       domain = process.env.API_URL.replace(/\/$/, "");
       console.log(`[editWorkflowOnMachine] 🌐 Domain (from API_URL env): ${domain}`);
     } else {
@@ -36,6 +41,9 @@ export const editWorkflowOnMachine = withServerPromise(
       console.log(`[editWorkflowOnMachine]    - protocol: ${protocol}`);
       console.log(`[editWorkflowOnMachine]    - domain: ${domain}`);
     }
+    console.log(`[editWorkflowOnMachine] 🔧 Environment Check:`);
+    console.log(`[editWorkflowOnMachine]    - EDIT_ORIGIN_URL: ${process.env.EDIT_ORIGIN_URL || '(not set)'}`);
+    console.log(`[editWorkflowOnMachine]    - API_URL: ${process.env.API_URL || '(not set)'}`)
 
     if (!userId) {
       throw new Error("No user id");
