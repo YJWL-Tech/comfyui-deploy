@@ -27,10 +27,10 @@ export async function getMachines() {
         orgId
           ? eq(machinesTable.org_id, orgId)
           : // make sure org_id is null
-            and(
-              eq(machinesTable.user_id, userId),
-              isNull(machinesTable.org_id)
-            ),
+          and(
+            eq(machinesTable.user_id, userId),
+            isNull(machinesTable.org_id)
+          ),
         eq(machinesTable.disabled, false)
       )
     );
@@ -48,9 +48,9 @@ export async function getMachineById(id: string) {
         orgId
           ? eq(machinesTable.org_id, orgId)
           : and(
-              eq(machinesTable.user_id, userId),
-              isNull(machinesTable.org_id)
-            ),
+            eq(machinesTable.user_id, userId),
+            isNull(machinesTable.org_id)
+          ),
         eq(machinesTable.id, id)
       )
     );
@@ -180,13 +180,19 @@ async function _buildMachine(
   data: z.infer<typeof addCustomMachineSchema>,
   b: MachineType
 ) {
-  const headersList = headers();
+  // 优先使用 API_URL 环境变量，作为回调地址（ComfyUI worker 需要能访问到）
+  let callbackOrigin: string;
+  if (process.env.API_URL) {
+    callbackOrigin = process.env.API_URL.replace(/\/$/, "");
+  } else {
+    const headersList = headers();
+    const domain = headersList.get("x-forwarded-host") || "";
+    const protocol = headersList.get("x-forwarded-proto") || "";
 
-  const domain = headersList.get("x-forwarded-host") || "";
-  const protocol = headersList.get("x-forwarded-proto") || "";
-
-  if (domain === "") {
-    throw new Error("No domain");
+    if (domain === "") {
+      throw new Error("No domain and API_URL not set");
+    }
+    callbackOrigin = `${protocol}://${domain}`;
   }
 
   // Call remote builder
@@ -199,7 +205,7 @@ async function _buildMachine(
       machine_id: b.id,
       name: b.id,
       snapshot: data.snapshot, //JSON.parse( as string),
-      callback_url: `${protocol}://${domain}/api/machine-built`,
+      callback_url: `${callbackOrigin}/api/machine-built`,
       models: data.models, //JSON.parse(data.models as string),
       gpu: data.gpu && data.gpu.length > 0 ? data.gpu : "T4",
     }),

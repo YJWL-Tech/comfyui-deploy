@@ -12,10 +12,16 @@ export const editWorkflowOnMachine = withServerPromise(
   async (workflow_version_id: string, machine_id: string) => {
     const { userId, orgId } = await auth();
 
-    const headersList = headers();
-    const host = headersList.get("host") || "";
-    const protocol = headersList.get("x-forwarded-proto") || "";
-    const domain = `${protocol}://${host}`;
+    // 优先使用 API_URL 环境变量，作为 origin（ComfyUI 机器需要能访问到）
+    let domain: string;
+    if (process.env.API_URL) {
+      domain = process.env.API_URL.replace(/\/$/, "");
+    } else {
+      const headersList = headers();
+      const host = headersList.get("host") || "";
+      const protocol = headersList.get("x-forwarded-proto") || "";
+      domain = `${protocol}://${host}`;
+    }
 
     if (!userId) {
       throw new Error("No user id");
