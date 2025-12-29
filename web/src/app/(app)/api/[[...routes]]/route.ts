@@ -69,7 +69,15 @@ const corsHandler = cors({
 
 // CORS Check
 app.use("/workflow", corsHandler, checkAuth);
-app.use("/workflow-version/*", corsHandler, checkAuth);
+// workflow-version: CORS 先处理，然后对非 OPTIONS 请求进行认证
+app.use("/workflow-version/*", corsHandler);
+app.use("/workflow-version/*", async (c, next) => {
+  // OPTIONS 预检请求跳过认证
+  if (c.req.method === "OPTIONS") {
+    return next();
+  }
+  return checkAuth(c, next);
+});
 app.use("/files/*", corsHandler, checkAuth);
 app.use("/deployments", corsHandler, checkAuth);
 app.use("/deployments/*", corsHandler, checkAuth);

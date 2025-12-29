@@ -5,6 +5,12 @@ import { getWorkflowVersion } from "@/server/crudWorkflow";
 import { z, createRoute } from "@hono/zod-openapi";
 import { createSelectSchema } from "drizzle-zod";
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
 const route = createRoute({
   method: "get",
   path: "/workflow-version/:version_id",
@@ -53,6 +59,14 @@ const route = createRoute({
 });
 
 export const registerGetWorkflowRoute = (app: App) => {
+  // Handle OPTIONS preflight request for CORS
+  app.options("/workflow-version/:version_id", async (c) => {
+    return new Response(null, {
+      status: 204,
+      headers: corsHeaders,
+    });
+  });
+
   return app.openapi(route, async (c) => {
     const { version_id } = c.req.valid("param");
     const apiUser = c.get("apiKeyTokenData")!;
@@ -64,6 +78,7 @@ export const registerGetWorkflowRoute = (app: App) => {
         },
         {
           status: 500,
+          headers: corsHeaders,
         },
       );
 
@@ -72,6 +87,7 @@ export const registerGetWorkflowRoute = (app: App) => {
       if (workflow_version) {
         return c.json(workflow_version, {
           status: 200,
+          headers: corsHeaders,
         });
       } else {
         return c.json(
@@ -80,6 +96,7 @@ export const registerGetWorkflowRoute = (app: App) => {
           },
           {
             status: 500,
+            headers: corsHeaders,
           },
         );
       }
@@ -93,6 +110,7 @@ export const registerGetWorkflowRoute = (app: App) => {
         {
           statusText: "Invalid request",
           status: 500,
+          headers: corsHeaders,
         },
       );
     }
