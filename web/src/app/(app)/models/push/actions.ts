@@ -178,22 +178,34 @@ async function triggerMachineDownloads(
       // 调用机器的下载接口
       const machineDownloadUrl = `${machine.endpoint}/comfyui-deploy/model/download`;
 
-      console.log(`Triggering download on machine ${machine.name} for model ${model.filename}`);
-      console.log(`Using API URL: ${apiUrl}`);
+      const requestBody = {
+        task_id: task.id,
+        download_url: downloadUrl,
+        folder_path: model.folder_path,
+        filename: model.filename,
+        api_url: apiUrl, // 使用当前服务器的 API URL
+        // auth_token 不再需要，API 已经去掉认证
+      };
+
+      console.log(`\n========== [Model Download] 发送下载任务到 ComfyUI ==========`);
+      console.log(`[Model Download] Machine: ${machine.name} (${machine.id})`);
+      console.log(`[Model Download] Model: ${model.filename}`);
+      console.log(`[Model Download] Request URL: ${machineDownloadUrl}`);
+      console.log(`[Model Download] Request Method: POST`);
+      console.log(`[Model Download] Request Body:`);
+      console.log(`   - task_id: ${requestBody.task_id}`);
+      console.log(`   - download_url: ${requestBody.download_url.substring(0, 100)}...`);
+      console.log(`   - folder_path: ${requestBody.folder_path}`);
+      console.log(`   - filename: ${requestBody.filename}`);
+      console.log(`   - api_url: ${requestBody.api_url}`);
+      console.log(`==============================================================\n`);
 
       fetch(machineDownloadUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          task_id: task.id,
-          download_url: downloadUrl,
-          folder_path: model.folder_path,
-          filename: model.filename,
-          api_url: apiUrl, // 使用当前服务器的 API URL
-          // auth_token 不再需要，API 已经去掉认证
-        }),
+        body: JSON.stringify(requestBody),
       })
         .then((response) => {
           if (response.ok) {

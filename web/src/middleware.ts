@@ -54,6 +54,15 @@ export async function middleware(request: NextRequest) {
       return NextResponse.next();
     }
 
+    // 允许模型下载任务状态更新（ComfyUI 回调，PATCH 请求）
+    // 匹配 /api/volume/model/push/{task_id}
+    if (
+      request.method === "PATCH" &&
+      /^\/api\/volume\/model\/push\/[a-f0-9-]+$/.test(pathname)
+    ) {
+      return NextResponse.next();
+    }
+
     // 其他 API 路由检查 Bearer token（保持与原有 API key 系统兼容）
     const authHeader = request.headers.get("Authorization");
     if (authHeader?.startsWith("Bearer ")) {
