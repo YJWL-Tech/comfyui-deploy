@@ -209,13 +209,23 @@ export function PublicRunOutputs(props: {
         console.log(res?.status);
         if (res) setStatus(res.status);
         if (res && res.status === "success") {
-          // 安全检查：确保 outputs 和 images 存在
-          const images = res.outputs?.[0]?.data?.images;
-          if (images && Array.isArray(images)) {
-            const imageURLs = images.map((item: { url: string; }) => {
-              return { url: item.url };
-            });
-            setImage(imageURLs);
+          // 收集所有 output 中的 images
+          const allImages: { url: string }[] = [];
+          if (res.outputs && Array.isArray(res.outputs)) {
+            for (const output of res.outputs) {
+              const images = output?.data?.images;
+              if (images && Array.isArray(images)) {
+                for (const item of images) {
+                  if (item.url) {
+                    allImages.push({ url: item.url });
+                  }
+                }
+              }
+            }
+          }
+          
+          if (allImages.length > 0) {
+            setImage(allImages);
           } else {
             console.warn("No images found in outputs:", res.outputs);
             setImage([]);
