@@ -22,9 +22,35 @@ function isImageUrl(url: string): boolean {
   }
 }
 
+// 检查字符串是否看起来像图片 URL（包括没有扩展名的情况）
+function looksLikeImageUrl(url: string): boolean {
+  // 先检查是否有图片扩展名
+  if (isImageUrl(url)) return true;
+  
+  // 检查是否是有效的 HTTP(S) URL
+  try {
+    const urlObj = new URL(url);
+    return urlObj.protocol === 'http:' || urlObj.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 // 解析输入值，提取图片 URL
 function extractImageUrls(data: unknown): string[] {
   const urls: string[] = [];
+  
+  // 处理数组类型（原生数组）
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      if (typeof item === "string") {
+        if (item.startsWith("data:image/") || looksLikeImageUrl(item)) {
+          urls.push(item);
+        }
+      }
+    }
+    return urls;
+  }
   
   if (typeof data === "string") {
     // 检查是否是 base64 图片
@@ -38,7 +64,7 @@ function extractImageUrls(data: unknown): string[] {
       const parsed = JSON.parse(data);
       if (Array.isArray(parsed)) {
         for (const item of parsed) {
-          if (typeof item === "string" && (isImageUrl(item) || item.startsWith("data:image/"))) {
+          if (typeof item === "string" && (looksLikeImageUrl(item) || item.startsWith("data:image/"))) {
             urls.push(item);
           }
         }
@@ -49,7 +75,7 @@ function extractImageUrls(data: unknown): string[] {
     }
     
     // 检查是否是单个图片 URL
-    if (isImageUrl(data)) {
+    if (looksLikeImageUrl(data)) {
       urls.push(data);
     }
   }
