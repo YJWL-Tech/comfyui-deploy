@@ -8,6 +8,9 @@
 import { startWorker } from "@/worker/queue-worker-integrated";
 import { NextResponse } from "next/server";
 
+// 强制动态路由，防止在构建时被预渲染执行
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
     try {
         console.log("🔧 [API] Manual worker start requested");

@@ -6,6 +6,9 @@
 import { NextResponse } from "next/server";
 import { isInitialized, initializeWorkerAndChecker } from "@/server/initWorker";
 
+// 强制动态路由，防止在构建时被预渲染执行
+export const dynamic = 'force-dynamic';
+
 // 全局变量来跟踪 instrumentation 是否已执行
 declare global {
     var instrumentationExecuted: boolean | undefined;
