@@ -6,6 +6,44 @@ import { eq, and, inArray } from "drizzle-orm";
 import { decrementMachineQueue } from "@/server/machine/updateMachineStatus";
 import { sql } from "drizzle-orm";
 
+// 重试配置
+const EXECUTION_RETRY_ENABLED = process.env.COMFYUI_EXECUTION_RETRY_ENABLED === "true";
+const RETRY_DELAY_MS = parseInt(process.env.COMFYUI_EXECUTION_RETRY_DELAY_MS || "5000");
+
+/**
+ * 判断错误类型是否应该重试
+ * 某些错误（如参数错误、节点未找到）不应该重试
+ */
+function shouldRetryError(output_data: any): boolean {
+    if (!output_data?.error) {
+        return true; // 没有具体错误信息，默认重试
+    }
+
+    const errorType = (output_data.error?.error_type || "").toLowerCase();
+    const errorMessage = (output_data.error?.message || output_data.error?.stack_trace || "").toLowerCase();
+
+    // 不应该重试的错误类型
+    const nonRetryablePatterns = [
+        "value_error",       // 参数错误
+        "valueerror",        // Python ValueError
+        "node_not_found",    // 节点未找到
+        "invalid_workflow",  // 工作流无效
+        "missing_node",      // 缺少节点
+        "invalid_input",     // 无效输入
+        "type_error",        // 类型错误
+        "typeerror",         // Python TypeError
+    ];
+
+    for (const pattern of nonRetryablePatterns) {
+        if (errorType.includes(pattern) || errorMessage.includes(pattern)) {
+            console.log(`[retry] Error pattern "${pattern}" found, not retryable`);
+            return false;
+        }
+    }
+
+    return true;
+}
+
 /**
  * 合并两个 output data 对象
  * 将新数据中的 URL 等信息合并到现有数据中
@@ -194,12 +232,18 @@ export async function updateWorkflowRunStatus(
     }
 
     if (status) {
-        // 先查询当前状态，以便判断是否需要减少队列计数
+        // 先查询当前状态，以便判断是否需要减少队列计数和是否需要重试
         const workflowRun = await db.query.workflowRunsTable.findFirst({
             where: eq(workflowRunsTable.id, run_id),
             columns: {
                 machine_id: true,
                 status: true,
+                retry_count: true,
+                max_retries: true,
+                workflow_version_id: true,
+                workflow_inputs: true,
+                origin: true,
+                queue_job_id: true,
             },
         });
 
@@ -212,6 +256,99 @@ export async function updateWorkflowRunStatus(
             (status === "success" || status === "failed") &&
             previousStatus !== "success" &&
             previousStatus !== "failed";
+
+        // 检查是否需要重试（仅在失败时）
+        if (status === "failed" && isCompleting && EXECUTION_RETRY_ENABLED) {
+            const currentRetryCount = workflowRun.retry_count || 0;
+            const maxRetries = workflowRun.max_retries || 0;
+
+            // 检查是否还有重试次数，以及错误类型是否可重试
+            if (maxRetries > 0 && currentRetryCount < maxRetries && shouldRetryError(output_data)) {
+                console.log(`[retry] Triggering retry for run ${run_id} (attempt ${currentRetryCount + 1}/${maxRetries})`);
+
+                // 增加重试计数，但先不更新状态（保持当前状态，等重试真正开始时再重置）
+                const newRetryCount = currentRetryCount + 1;
+
+                // 减少队列计数（因为当前执行已经失败结束）
+                if (workflowRun.machine_id) {
+                    await decrementMachineQueue(workflowRun.machine_id);
+                    console.log(`[retry] Decremented queue count for machine ${workflowRun.machine_id}`);
+                }
+
+                // 清理之前的输出数据（重试时需要重新生成）
+                await db
+                    .delete(workflowRunOutputs)
+                    .where(eq(workflowRunOutputs.run_id, run_id));
+                console.log(`[retry] Cleared previous output data for run ${run_id}`);
+
+                // 更新重试计数
+                await db
+                    .update(workflowRunsTable)
+                    .set({
+                        retry_count: newRetryCount,
+                        // 暂时不更新状态，等重试开始时再更新
+                    })
+                    .where(eq(workflowRunsTable.id, run_id));
+
+                // 延迟后触发重试
+                setTimeout(async () => {
+                    try {
+                        console.log(`[retry] Starting retry execution for run ${run_id}`);
+                        const { createRun } = await import("@/server/createRun");
+
+                        const result = await createRun({
+                            origin: process.env.API_URL || "",
+                            workflow_version_id: workflowRun.workflow_version_id!,
+                            machine_id: workflowRun.machine_id!,
+                            inputs: workflowRun.workflow_inputs || undefined,
+                            runOrigin: workflowRun.origin,
+                            queueJobId: workflowRun.queue_job_id || undefined,
+                            existingRunId: run_id,
+                            isRetry: true,
+                        });
+
+                        console.log(`[retry] Retry initiated for run ${run_id}:`, result);
+                    } catch (retryError) {
+                        console.error(`[retry] Failed to retry run ${run_id}:`, retryError);
+
+                        // 重试失败，标记为最终失败
+                        await db
+                            .update(workflowRunsTable)
+                            .set({
+                                status: "failed",
+                                ended_at: new Date(),
+                            })
+                            .where(eq(workflowRunsTable.id, run_id));
+
+                        // 发送最终失败通知
+                        try {
+                            const { sendWebhookNotification, buildWebhookPayload } = await import("@/server/notifications/webhook-notifier");
+                            const payload = await buildWebhookPayload(
+                                run_id,
+                                "failed",
+                                `Workflow execution failed after ${newRetryCount} retries`
+                            );
+                            await sendWebhookNotification(payload);
+                        } catch (notifyError) {
+                            console.error(`[retry] Failed to send failure notification:`, notifyError);
+                        }
+                    }
+                }, RETRY_DELAY_MS);
+
+                // 返回，不继续执行后续的状态更新和通知逻辑
+                console.log(`[retry] Retry scheduled in ${RETRY_DELAY_MS}ms for run ${run_id}`);
+                return;
+            } else {
+                // 不满足重试条件，记录原因
+                if (maxRetries === 0) {
+                    console.log(`[retry] Retry not enabled for run ${run_id} (max_retries=0)`);
+                } else if (currentRetryCount >= maxRetries) {
+                    console.log(`[retry] Max retries reached for run ${run_id} (${currentRetryCount}/${maxRetries})`);
+                } else if (!shouldRetryError(output_data)) {
+                    console.log(`[retry] Error type not retryable for run ${run_id}`);
+                }
+            }
+        }
 
         const endedAt = status === "success" || status === "failed" ? new Date() : null;
 
@@ -230,12 +367,20 @@ export async function updateWorkflowRunStatus(
             await decrementMachineQueue(workflowRun.machine_id);
 
             // 发送异步通知（webhook）
+            // 对于失败的任务，在这里发送通知表示是最终失败（没有重试或重试次数已用完）
             try {
                 const { sendWebhookNotification, buildWebhookPayload } = await import("@/server/notifications/webhook-notifier");
+
+                // 如果是失败且有重试历史，在消息中说明
+                let errorMessage = status === "failed" ? "Workflow execution failed" : undefined;
+                if (status === "failed" && workflowRun.retry_count > 0) {
+                    errorMessage = `Workflow execution failed after ${workflowRun.retry_count} retries`;
+                }
+
                 const payload = await buildWebhookPayload(
                     run_id,
                     status,
-                    status === "failed" ? "Workflow execution failed" : undefined
+                    errorMessage
                 );
                 // 异步发送，不阻塞主流程
                 sendWebhookNotification(payload).catch(err => {

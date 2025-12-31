@@ -26,6 +26,8 @@ export const createRun = withServerPromise(
     runOrigin,
     apiUser,
     queueJobId,
+    existingRunId,
+    isRetry = false,
   }: {
     origin: string;
     workflow_version_id: string | WorkflowVersionType;
@@ -34,6 +36,8 @@ export const createRun = withServerPromise(
     runOrigin?: WorkflowRunOriginType;
     apiUser?: APIKeyUserType;
     queueJobId?: string; // 队列任务的 job_id
+    existingRunId?: string; // 重试时复用的 run_id
+    isRetry?: boolean; // 是否为重试执行
   }) => {
     // 🔧 关键修复：优先使用 API_URL 环境变量，而不是客户端传入的 origin
     // 客户端传入的 origin 是 window.location.origin（用户访问网页的地址）
@@ -182,24 +186,58 @@ export const createRun = withServerPromise(
       file_upload_endpoint: `${effectiveOrigin}/api/file-upload`,
     };
 
-    prompt_id = v4();
+    // 重试配置
+    const maxRetries = parseInt(process.env.COMFYUI_MAX_EXECUTION_RETRIES || "1");
+    const retryEnabled = process.env.COMFYUI_EXECUTION_RETRY_ENABLED === "true";
 
-    // Add to our db
+    let workflow_run: any[];
 
-    const workflow_run = await db
-      .insert(workflowRunsTable)
-      .values({
-        id: prompt_id,
-        workflow_id: workflow_version_data.workflow_id,
-        workflow_version_id: workflow_version_data.id,
-        workflow_inputs: inputs,
-        machine_id: machine.id,
-        origin: runOrigin,
-        queue_job_id: queueJobId,
-      })
-      .returning();
+    if (existingRunId && isRetry) {
+      // 重试模式：复用原有的 run_id
+      prompt_id = existingRunId;
+      console.log(`[createRun] 🔄 Retry mode, reusing run_id: ${prompt_id}`);
 
-    console.log(`[createRun] ✅ Workflow run record created: ${workflow_run[0].id}`);
+      // 更新现有记录的状态（重置为 not-started）
+      workflow_run = await db
+        .update(workflowRunsTable)
+        .set({
+          status: "not-started",
+          started_at: null,
+          ended_at: null,
+        })
+        .where(eq(workflowRunsTable.id, existingRunId))
+        .returning();
+
+      if (workflow_run.length === 0) {
+        throw new Error(`Cannot find existing run for retry: ${existingRunId}`);
+      }
+
+      console.log(`[createRun] ✅ Workflow run record reset for retry: ${workflow_run[0].id}`);
+    } else {
+      // 新建模式
+      prompt_id = v4();
+
+      // Add to our db
+      workflow_run = await db
+        .insert(workflowRunsTable)
+        .values({
+          id: prompt_id,
+          workflow_id: workflow_version_data.workflow_id,
+          workflow_version_id: workflow_version_data.id,
+          workflow_inputs: inputs,
+          machine_id: machine.id,
+          origin: runOrigin,
+          queue_job_id: queueJobId,
+          retry_count: 0,
+          max_retries: retryEnabled ? maxRetries : 0,
+        })
+        .returning();
+
+      console.log(`[createRun] ✅ Workflow run record created: ${workflow_run[0].id}`);
+      if (retryEnabled) {
+        console.log(`[createRun] 🔄 Retry enabled with max_retries: ${maxRetries}`);
+      }
+    }
 
     revalidatePath(`/${workflow_version_data.workflow_id}`);
 

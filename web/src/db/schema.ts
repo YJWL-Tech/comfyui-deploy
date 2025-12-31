@@ -162,6 +162,9 @@ export const workflowRunsTable = dbSchema.table("workflow_runs", {
   started_at: timestamp("started_at"),
   // 队列任务的 job_id，用于关联 BullMQ 任务
   queue_job_id: text("queue_job_id"),
+  // 重试相关字段
+  retry_count: integer("retry_count").default(0).notNull(),
+  max_retries: integer("max_retries").default(0).notNull(),
 });
 
 export const workflowRunRelations = relations(
