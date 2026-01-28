@@ -366,6 +366,18 @@ export async function updateWorkflowRunStatus(
         if (isCompleting && workflowRun?.machine_id) {
             await decrementMachineQueue(workflowRun.machine_id);
 
+            // 【事件驱动调度】Machine 空闲了，尝试处理下一个等待的任务
+            // 这样可以保证 FIFO 顺序，不会有"新任务插队"的问题
+            try {
+                const { tryProcessNextJob } = await import("@/server/queue/event-driven-scheduler");
+                // 异步处理，不阻塞当前请求
+                tryProcessNextJob(workflowRun.machine_id).catch(err => {
+                    console.error(`[Scheduler] Error processing next job:`, err);
+                });
+            } catch (schedulerError) {
+                console.error(`[Scheduler] Failed to import scheduler:`, schedulerError);
+            }
+
             // 发送异步通知（webhook）
             // 对于失败的任务，在这里发送通知表示是最终失败（没有重试或重试次数已用完）
             try {

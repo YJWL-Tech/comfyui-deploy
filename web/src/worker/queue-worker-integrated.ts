@@ -33,6 +33,31 @@ function setRedisInstance(redis: Redis | null) {
 }
 
 export function startWorker() {
+    // 检查是否使用事件驱动调度器
+    if (process.env.USE_EVENT_DRIVEN_SCHEDULER === "true") {
+        console.log("=".repeat(60));
+        console.log("📝 Event-driven scheduler is enabled");
+        console.log("   Worker will NOT auto-process jobs");
+        console.log("   Jobs are processed when:");
+        console.log("   1. New job is added to queue");
+        console.log("   2. A job completes (/api/update-run callback)");
+        console.log("=".repeat(60));
+        
+        // 启动时处理所有等待的任务
+        (async () => {
+            try {
+                const { processAllAvailableJobs } = await import("@/server/queue/event-driven-scheduler");
+                console.log("📝 Processing waiting jobs on startup...");
+                const result = await processAllAvailableJobs();
+                console.log(`✅ Processed ${result.processedCount} waiting jobs on startup`);
+            } catch (err) {
+                console.error("❌ Error processing waiting jobs on startup:", err);
+            }
+        })();
+        
+        return; // 不启动 Worker
+    }
+
     // 单例保护：如果已经启动，直接返回
     const existingWorker = getWorkerInstance();
     if (existingWorker) {
@@ -164,7 +189,7 @@ export function startWorker() {
             console.log(`   Load Balancer: ${loadBalancerStrategy}`);
             console.log(`   Ready at: ${new Date().toISOString()}`);
             console.log("=".repeat(60));
-            console.log("📝 Worker is now processing jobs...\n");
+            console.log("📝 Worker is now processing jobs (traditional mode)...\n");
         });
 
         worker.on("active", (job) => {

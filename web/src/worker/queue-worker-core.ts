@@ -195,21 +195,21 @@ export async function processQueueJob({
 
         if ("workflow_run_id" in result) {
             const duration = Date.now() - startTime;
-            // 关键信息始终输出
             logAlways(`✅ [JOB ${job.id}] Workflow run created successfully!`);
             logAlways(`   Workflow Run ID: ${result.workflow_run_id}`);
             logAlways(`   Duration: ${duration}ms`);
-            logAlways(`   Database record created at: ${new Date().toISOString()}`);
-            log(`   Note: Task is now running in ComfyUI, queue count will be decremented when status changes to success/failed`);
+            log(`   Note: Task is now running in ComfyUI, Worker will process next job`);
+            log(`   Queue count will be decremented when ComfyUI calls /api/update-run`);
         } else {
-            // 错误信息始终输出
             logError(`❌ [JOB ${job.id}] Workflow run started, but result format unexpected:`, result);
             logError(`   Result type: ${typeof result}`);
             logError(`   Result keys: ${result ? Object.keys(result).join(", ") : "null/undefined"}`);
             throw new Error(`createRun returned unexpected result format: ${JSON.stringify(result)}`);
         }
-        // 任务已启动，但不等待完成
-        // 队列计数会在/api/update-run中当状态变为success/failed时减少
+        
+        // 任务已启动，立即返回
+        // Worker 不等待 ComfyUI 完成，避免卡住
+        // 队列计数会在 /api/update-run 中当状态变为 success/failed 时减少
         return result;
     } catch (error) {
         const duration = Date.now() - startTime;

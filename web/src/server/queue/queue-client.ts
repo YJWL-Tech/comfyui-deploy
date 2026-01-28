@@ -35,13 +35,32 @@ export interface QueueJobData {
 }
 
 export async function addJobToQueue(data: QueueJobData) {
-    // 不使用优先级，让所有 job 公平竞争（FIFO）
-    // 这样当 machine 空闲时，waiting 队列中的下一个 job 会被处理
-    // 而不是等待被延迟的 job 重试
-    return await workflowRunQueue.add("run-workflow", data, {
-        jobId: `workflow-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-        // 不设置 priority，使用默认的 FIFO 顺序
+    // 使用 timestamp 作为优先级，保证 FIFO 顺序
+    // BullMQ 优先级：数字越小优先级越高
+    // 使用 timestamp 的后 9 位作为优先级（避免超出范围）
+    // 这样早提交的任务优先级更高，即使被延迟回来也能保持顺序
+    const timestamp = Date.now();
+    const priority = timestamp % 1000000000; // 取后 9 位，约 11.5 天的范围
+    
+    const job = await workflowRunQueue.add("run-workflow", data, {
+        jobId: `workflow-${timestamp}-${Math.random().toString(36).substring(2, 9)}`,
+        priority: priority, // 早提交的任务 priority 更小，优先级更高
     });
+
+    // 【事件驱动调度】任务加入队列后，尝试立即执行（如果有空闲 machine）
+    if (process.env.USE_EVENT_DRIVEN_SCHEDULER === "true") {
+        try {
+            const { tryProcessNextJob } = await import("./event-driven-scheduler");
+            // 异步处理，不阻塞当前请求
+            tryProcessNextJob().catch(err => {
+                console.error(`[Scheduler] Error processing job after enqueue:`, err);
+            });
+        } catch (err) {
+            // 忽略错误，不影响主流程
+        }
+    }
+
+    return job;
 }
 
 export async function getQueueStatus() {
