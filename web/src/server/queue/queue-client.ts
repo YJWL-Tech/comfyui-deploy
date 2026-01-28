@@ -35,12 +35,11 @@ export interface QueueJobData {
 }
 
 export async function addJobToQueue(data: QueueJobData) {
-    // 使用 timestamp 作为优先级，保证 FIFO 顺序
-    // BullMQ 优先级：数字越小优先级越高
-    // 使用 timestamp 的后 9 位作为优先级（避免超出范围）
-    // 这样早提交的任务优先级更高，即使被延迟回来也能保持顺序
+    // 使用递增计数作为优先级，保证 FIFO 顺序
+    // BullMQ 优先级：数字越小优先级越高，范围 0-2097152
+    // 使用 timestamp 的秒级部分 % 2097152，约 24 天的循环
     const timestamp = Date.now();
-    const priority = timestamp % 1000000000; // 取后 9 位，约 11.5 天的范围
+    const priority = Math.floor(timestamp / 1000) % 2097152; // 秒级，约 24 天循环
     
     const job = await workflowRunQueue.add("run-workflow", data, {
         jobId: `workflow-${timestamp}-${Math.random().toString(36).substring(2, 9)}`,
