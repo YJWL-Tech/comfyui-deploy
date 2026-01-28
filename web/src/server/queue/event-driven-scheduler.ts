@@ -141,15 +141,10 @@ export async function tryProcessNextJob(machineId?: string) {
             if (result && "workflow_run_id" in result) {
                 console.log(`[Scheduler] ✅ Job ${job.id} started, workflow_run_id: ${result.workflow_run_id}`);
                 
-                // 将任务移到 completed 状态（而不是直接删除）
-                // 这样可以在队列监控中看到已完成的任务
-                try {
-                    await job.moveToCompleted(result, "0", false);
-                } catch (moveError) {
-                    // 如果移动失败（比如锁已丢失），直接移除
-                    console.warn(`[Scheduler] Failed to move job to completed, removing instead:`, moveError);
-                    await job.remove();
-                }
+                // 从队列中移除任务
+                // 注意：任务详情已保存在 workflow_runs 表中
+                // 可以在 Runs 页面查看已完成的任务，而不是 BullMQ 队列监控
+                await job.remove();
                 
                 return { 
                     processed: true, 
