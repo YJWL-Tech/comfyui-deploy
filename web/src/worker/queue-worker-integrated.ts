@@ -168,7 +168,7 @@ export function startWorker() {
             }
         });
 
-        worker.on("failed", (job, err) => {
+        worker.on("failed", async (job, err) => {
             console.log("\n" + "=".repeat(60));
             if (job) {
                 console.error(`❌ [JOB ${job.id}] Failed`);
@@ -176,6 +176,28 @@ export function startWorker() {
                 console.error(`   Attempts: ${job.attemptsMade}`);
                 if (job.failedReason) {
                     console.error(`   Reason: ${job.failedReason}`);
+                }
+                
+                // 发送失败通知（即使没有 workflow_run 记录）
+                try {
+                    const webhookUrl = process.env.WEBHOOK_NOTIFICATION_URL;
+                    if (webhookUrl) {
+                        const { enqueueNotification } = await import("@/server/notifications/notification-queue");
+                        const payload = {
+                            workflow_run_id: `queue-job-${job.id}`, // 使用 job_id 作为标识
+                            status: "failed" as const,
+                            job_id: job.id,
+                            deployment_id: job.data.deployment_id,
+                            error: err.message || "Unknown error",
+                            completed_at: new Date().toISOString(),
+                            webhook_url: webhookUrl,
+                            webhook_auth_header: process.env.WEBHOOK_AUTHORIZATION_HEADER,
+                        };
+                        await enqueueNotification(payload);
+                        console.log(`✅ [JOB ${job.id}] Failure notification enqueued`);
+                    }
+                } catch (notifyError) {
+                    console.error(`❌ [JOB ${job.id}] Failed to enqueue failure notification:`, notifyError);
                 }
             } else {
                 console.error("❌ Job failed (job info unavailable)");

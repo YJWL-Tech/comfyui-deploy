@@ -105,8 +105,14 @@ export async function processQueueJob({
     }
 
     if (!selectedMachine) {
-        logError(`❌ [JOB ${job.id}] No available machine found`);
-        throw new Error("No available machine found");
+        logError(`❌ [JOB ${job.id}] No available machine found (all machines may be busy or unavailable)`);
+        log(`   This job will be delayed to retry when machines become available`);
+        
+        // 设置 needsDelayedRetry 标记，让任务延迟重试而不是直接失败
+        const error = new Error("No available machine found") as any;
+        error.needsDelayedRetry = true;
+        error.machineName = "all machines"; // 用于日志显示
+        throw error;
     }
     log(`✅ [JOB ${job.id}] Machine selected: ${selectedMachine.name}`);
 
