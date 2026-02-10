@@ -36,12 +36,37 @@ export async function tryProcessNextJob(machineId?: string) {
             ),
         });
 
+        // 无可用机器时，拉取所有未禁用机器并打日志，便于排查“突然不可用”
         if (availableMachines.length === 0) {
-            console.log("[Scheduler] No available machines, waiting...");
+            const allMachines = await db.query.machinesTable.findMany({
+                where: eq(machinesTable.disabled, false),
+                columns: {
+                    id: true,
+                    name: true,
+                    status: true,
+                    current_queue_size: true,
+                    allow_comfyui_queue_size: true,
+                    operational_status: true,
+                },
+            });
+            console.log("[Scheduler] No available machines. Current machine states:");
+            for (const m of allMachines) {
+                const reason =
+                    m.status !== "ready"
+                        ? `status=${m.status}`
+                        : m.current_queue_size >= (m.allow_comfyui_queue_size ?? 0)
+                          ? `queue_full(${m.current_queue_size}/${m.allow_comfyui_queue_size})`
+                          : "ok";
+                console.log(
+                    `   [Machine] ${m.name} (${m.id}): status=${m.status}, queue=${m.current_queue_size}/${m.allow_comfyui_queue_size}, op=${m.operational_status} => ${reason}`
+                );
+            }
             return { processed: false, reason: "no_available_machines" };
         }
 
-        console.log(`[Scheduler] Found ${availableMachines.length} available machines`);
+        console.log(
+            `[Scheduler] Found ${availableMachines.length} available machines: ${availableMachines.map((m) => `${m.name}(queue=${m.current_queue_size}/${m.allow_comfyui_queue_size})`).join(", ")}`
+        );
 
         // 2. 从队列中获取等待中的任务（按优先级排序，最早的优先）
         // 注意：我们使用 getWaiting 而不是让 Worker 自动取
@@ -109,8 +134,13 @@ export async function tryProcessNextJob(machineId?: string) {
         }
 
         if (!selectedMachine) {
-            console.log(`[Scheduler] No suitable machine for job ${job.id}, will retry later`);
-            // 不移除任务，让它留在队列中
+            const groupOrSingle = deployment.machine_group_id
+                ? `group ${deployment.machineGroup?.name ?? deployment.machine_group_id}`
+                : `machine ${deployment.machine?.name ?? deployment.machine_id}`;
+            console.log(
+                `[Scheduler] No suitable machine for job ${job.id} (${groupOrSingle}), will retry later. ` +
+                    "If machines show queue_full, ComfyUI update-run callback may be failing (e.g. 403); try syncing queue from Machines page."
+            );
             return { processed: false, reason: "no_suitable_machine" };
         }
 

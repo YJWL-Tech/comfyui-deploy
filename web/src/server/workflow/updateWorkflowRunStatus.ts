@@ -363,8 +363,12 @@ export async function updateWorkflowRunStatus(
         // 当任务完成（success或failed）时，减少机器的队列计数
         // 这确保队列计数在任务真正完成时才减少，而不是在worker启动任务时
         // 只在状态首次变为success/failed时减少，避免重复减少
+        // 若 ComfyUI 无法回调本接口（如 403 代理拦截），此处不会执行，机器 queue 会一直偏高导致“不可用”；可从后台手动“同步队列”纠正
         if (isCompleting && workflowRun?.machine_id) {
             await decrementMachineQueue(workflowRun.machine_id);
+            console.log(
+                `[update-run] Decremented queue for machine=${workflowRun.machine_id} run_id=${run_id} status=${status}`
+            );
 
             // 【事件驱动调度】Machine 空闲了，尝试处理下一个等待的任务
             // 这样可以保证 FIFO 顺序，不会有"新任务插队"的问题

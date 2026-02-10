@@ -30,7 +30,9 @@ async function getComfyUIQueueStatus(machineEndpoint: string, authToken?: string
         });
 
         if (!response.ok) {
-            console.error(`Failed to fetch queue status from ${machineEndpoint}: ${response.statusText}`);
+            console.error(
+                `[MachineSync] Failed to fetch queue from ${machineEndpoint}: ${response.status} ${response.statusText}`
+            );
             return -1; // 返回 -1 表示获取失败
         }
 
@@ -43,7 +45,7 @@ async function getComfyUIQueueStatus(machineEndpoint: string, authToken?: string
 
         return running + pending;
     } catch (error) {
-        console.error(`Error fetching queue status from ${machineEndpoint}:`, error);
+        console.error(`[MachineSync] Error fetching queue from ${machineEndpoint}:`, error);
         return -1; // 返回 -1 表示获取失败
     }
 }
@@ -80,11 +82,17 @@ export async function syncSingleMachineQueue(machineId: string): Promise<{
         );
 
         if (actualQueueSize === -1) {
+            console.log(
+                `[MachineSync] ${machine.name} (${machine.endpoint}) => fetch failed, DB unchanged`
+            );
             return { success: false, message: "Failed to fetch queue status from ComfyUI" };
         }
 
         // 同步到数据库
         await syncMachineQueueSize(machineId, actualQueueSize);
+        console.log(
+            `[MachineSync] ${machine.name} (${machine.endpoint}) => synced queue=${actualQueueSize}`
+        );
 
         return {
             success: true,
@@ -150,6 +158,16 @@ export async function syncAllMachinesQueue(): Promise<{
 
         const successCount = processedResults.filter((r) => r.success).length;
         const failedCount = processedResults.length - successCount;
+        console.log(
+            `[MachineSync] syncAll: ${successCount} ok, ${failedCount} failed. ` +
+                processedResults
+                    .map((r) =>
+                        r.success
+                            ? `${r.machineName}: queue=${"actualQueueSize" in r ? r.actualQueueSize : "?"}`
+                            : `${r.machineName}: ${r.message}`
+                    )
+                    .join("; ")
+        );
 
         return {
             success: successCount,

@@ -104,6 +104,14 @@ bun run change-password <用户名> <新密码>
 
 示例：`bun run change-password admin mynewpassword`。需已配置 `POSTGRES_URL`（.env 或 .local.env）。
 
+**机器显示不可用 / 队列一直满**
+
+可用条件：`disabled=false`、`status=ready`、`current_queue_size < allow_comfyui_queue_size`。若 ComfyUI 无法成功回调 `/api/update-run`（例如被代理 403 拦截），服务端不会执行队列减一，机器会一直显示“满”而不可用。处理方式：
+
+1. 在后台 **Machines** 页对单台或全部机器执行 **同步队列**，用 ComfyUI 当前真实队列校正数据库。
+2. 排查 ComfyUI 到本服务的网络（代理、防火墙），确保能 POST 到 `https://你的域名/api/update-run`。
+3. 需要排查时可在环境变量中开启日志：`LOG_MACHINE_QUEUE=true`（队列增减）、`LOG_MACHINE_SELECTOR=true`（选机详情）；调度器在无可用机器时会自动打印各机器的 status/queue 与不可用原因。
+
 # Special Thanks
 
 - comfyui
