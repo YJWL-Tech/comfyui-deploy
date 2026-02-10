@@ -93,6 +93,17 @@ Major areas
 1. `bun run generate`
 2. `bun run migrate-local`
 
+**命令行修改用户密码**
+
+使用与注册相同的 bcrypt 加密方式，在 `web` 目录下执行：
+
+```bash
+cd web
+bun run change-password <用户名> <新密码>
+```
+
+示例：`bun run change-password admin mynewpassword`。需已配置 `POSTGRES_URL`（.env 或 .local.env）。
+
 # Special Thanks
 
 - comfyui
